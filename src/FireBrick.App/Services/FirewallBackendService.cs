@@ -44,6 +44,7 @@ public sealed class FirewallBackendService : IDisposable
     public event EventHandler<ConnectionEventDto>? ConnectionEventArrived;
     public event EventHandler<FirewallProfileMode>? ProfileModeChanged;
     public event EventHandler<NotificationMode>? NotificationModeChanged;
+    public event EventHandler<bool>? ServiceConnectionChanged;
 
     private FirewallBackendService()
     {
@@ -54,11 +55,46 @@ public sealed class FirewallBackendService : IDisposable
 
     public async Task InitializeAsync()
     {
-        IsUsingService = await _ipc.IsServiceAvailableAsync().ConfigureAwait(false);
+        // If launched elevated and bundled service needs install/start/update, self-heal automatically with zero prompts
+        if (IsElevated)
+        {
+            await Task.Run(() =>
+            {
+                var health = StartupManager.InspectServiceHealth();
+                if (health.NeedsInstall || health.NeedsStart || health.NeedsUpdate)
+                {
+                    try { StartupManager.InstallOrRepairService(health.BundledBinaryPath); } catch { }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        await ReconnectServiceAsync().ConfigureAwait(false);
         if (!IsUsingService)
         {
             _localAudit.TryStart(loadRecentHistory: true);
         }
+    }
+
+    public async Task<bool> ReconnectServiceAsync()
+    {
+        bool wasConnected = IsUsingService;
+        bool connected = false;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            if (await _ipc.IsServiceAvailableAsync().ConfigureAwait(false))
+            {
+                connected = true;
+                break;
+            }
+            await Task.Delay(350).ConfigureAwait(false);
+        }
+
+        IsUsingService = connected;
+        if (connected != wasConnected)
+        {
+            ServiceConnectionChanged?.Invoke(this, connected);
+        }
+        return connected;
     }
 
     public AppSettingsDto GetSettings() => _settingsStore.Get();

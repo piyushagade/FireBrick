@@ -69,6 +69,7 @@ public sealed partial class MainWindow : Window
         svc.BlockedConnectionPromptRequested += OnBlockedConnectionPromptRequested;
         svc.ProfileModeChanged += OnProfileModeChanged;
         svc.NotificationModeChanged += OnNotificationModeChanged;
+        svc.ServiceConnectionChanged += (_, _) => DispatcherQueue.TryEnqueue(UpdateStatusPill);
 
         NavView.SelectedItem = NavView.MenuItems[0];
 

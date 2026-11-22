@@ -284,7 +284,7 @@ public sealed partial class SettingsPage : Page
         ShowInfo(InfoBarSeverity.Success, "Command Copied to Clipboard", cmd);
     }
 
-    private void InstallServiceButton_Click(object sender, RoutedEventArgs e)
+    private async void InstallServiceButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -306,24 +306,22 @@ public sealed partial class SettingsPage : Page
                 return;
             }
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{cmd.Replace("\"", "\\\"")}\"",
-                UseShellExecute = true,
-                Verb = "runas"
-            });
+            ShowInfo(InfoBarSeverity.Informational, "Configuring FireBrickService...",
+                "Installing/updating service with automatic boot start and crash recovery...");
 
-            var copyAction = new Button { Content = "Copy Command" };
-            copyAction.Click += (_, _) =>
+            bool ok = await Task.Run(() => StartupManager.InstallOrRepairService(candidate));
+            if (ok)
             {
-                CopyTextToClipboard(cmd);
-                copyAction.Content = "Copied!";
-            };
-
-            ShowInfo(InfoBarSeverity.Success, "Service Install Initiated",
-                $"Installing and starting FireBrickService from {candidate}",
-                copyAction);
+                await FirewallBackendService.Instance.ReconnectServiceAsync();
+                LoadSettings();
+                ShowInfo(InfoBarSeverity.Success, "FireBrickService Running",
+                    $"Installed and started FireBrickService from {candidate} with automatic crash recovery.");
+            }
+            else
+            {
+                ShowInfo(InfoBarSeverity.Warning, "Service Setup Cancelled",
+                    "Administrator approval is required to install or update FireBrickService.");
+            }
         }
         catch (Exception ex)
         {

@@ -82,7 +82,39 @@ public sealed partial class DashboardPage : Page
             bool canWrite = status.IsServiceConnected || status.IsElevated;
             ElevateButton.Visibility = canWrite ? Visibility.Collapsed : Visibility.Visible;
 
-            if (!canWrite)
+            var svcHealth = await Task.Run(StartupManager.InspectServiceHealth);
+            if (svcHealth.NeedsInstall || svcHealth.NeedsStart || svcHealth.NeedsUpdate)
+            {
+                string label = svcHealth.NeedsInstall ? "Set Up Service" : (svcHealth.NeedsUpdate ? "Update Service" : "Start Service");
+                string desc = svcHealth.NeedsInstall
+                    ? "Install FireBrickService once (with automatic boot start & crash recovery) so FireBrick works without UAC prompts."
+                    : svcHealth.NeedsUpdate
+                        ? "A newer FireBrickService binary is bundled with this build. Click to update and restart the background service."
+                        : "FireBrickService is installed but currently stopped. Click to start it.";
+
+                var actionBtn = new Button { Content = label };
+                actionBtn.Click += async (_, _) =>
+                {
+                    actionBtn.IsEnabled = false;
+                    actionBtn.Content = "Working...";
+                    bool ok = await Task.Run(() => StartupManager.InstallOrRepairService(svcHealth.BundledBinaryPath));
+                    if (ok)
+                    {
+                        await FirewallBackendService.Instance.ReconnectServiceAsync();
+                        ShowBanner(InfoBarSeverity.Success, "FireBrickService Ready", "Background service is installed, running, and configured for automatic recovery.");
+                        await LoadStatusAsync();
+                    }
+                    else
+                    {
+                        actionBtn.IsEnabled = true;
+                        actionBtn.Content = label;
+                        ShowBanner(InfoBarSeverity.Warning, "Service Setup Cancelled", "Administrator approval is required once to configure FireBrickService.");
+                    }
+                };
+
+                ShowBanner(InfoBarSeverity.Informational, "Background Service Action Available", desc, actionBtn);
+            }
+            else if (!canWrite)
             {
                 ShowBanner(InfoBarSeverity.Warning, "Read-Only Mode",
                     "FireBrick is running without Administrator privileges and FireBrick.Service is not installed. Click 'Run as Administrator' to modify firewall rules or profiles.");
@@ -195,11 +227,12 @@ public sealed partial class DashboardPage : Page
         catch { }
     }
 
-    private void ShowBanner(InfoBarSeverity severity, string title, string message)
+    private void ShowBanner(InfoBarSeverity severity, string title, string message, Microsoft.UI.Xaml.Controls.Primitives.ButtonBase? actionButton = null)
     {
         StatusBanner.Severity = severity;
         StatusBanner.Title = title;
         StatusBanner.Message = message;
+        StatusBanner.ActionButton = actionButton;
         StatusBanner.IsOpen = true;
     }
 }
