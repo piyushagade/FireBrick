@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FireBrick.App.Pages.ProtectionPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:FireBrick.Core.Models">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,24">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Protection, Networks &amp; Blocklists" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock Text="Auto-switching Wi-Fi/network profiles, domain &amp; IP blocklist subscriptions, and Rule Lock tamper protection." Opacity="0.7" />
+            </StackPanel>
+
+            <InfoBar x:Name="ProtectionInfoBar" IsOpen="False" IsClosable="True" />
+
+            <!-- 1. Rule Lock & Tamper Protection -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Rule Lock &amp; Tamper Protection" FontWeight="SemiBold" FontSize="15" />
+                            <TextBlock Text="Monitors Windows Defender Firewall for unauthorized third-party rule injections and automatically reverts them." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="RuleLockToggle" Grid.Column="1" OnContent="Armed" OffContent="Off" Toggled="RuleLockToggle_Toggled" />
+                    </Grid>
+
+                    <TextBlock x:Name="RuleLockEmptyText" Text="No unauthorized rule injections detected." FontSize="12" Opacity="0.65" />
+
+                    <ItemsControl x:Name="RuleLockAlertsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:RuleLockAlertDto">
+                                <Border Margin="0,0,0,6" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="10,6">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{x:Bind TimeDisplay}" FontSize="12" Opacity="0.75" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind RuleName}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind ChangeType}" FontSize="12" Foreground="{StaticResource FireBrickWarnBrush}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- 2. Auto-Switching Network / Wi-Fi SSID Profiles -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Auto-Switching Network Profiles" FontWeight="SemiBold" FontSize="15" />
+                            <TextBlock x:Name="CurrentNetworkText" Text="Current Network: Detecting..." FontSize="12" Opacity="0.75" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <ToggleSwitch x:Name="AutoSwitchToggle" OnContent="Auto-Switch" OffContent="Off" Toggled="AutoSwitchToggle_Toggled" />
+                            <Button Content="+ Add Network Rule" Click="AddNetworkRule_Click" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock x:Name="EmptyNetworkRulesText" Text="No network rules configured yet. Add your Home Wi-Fi or untrusted Public Wi-Fi SSIDs." FontSize="12" Opacity="0.65" />
+
+                    <ItemsControl x:Name="NetworkRulesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:NetworkProfileRuleDto">
+                                <Border Margin="0,0,0,6" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="12,8">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{x:Bind NetworkName}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind ProfileDisplay}" Foreground="{StaticResource FireBrickAccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <Button Grid.Column="2" Content="Remove" Padding="8,4" FontSize="12" Tag="{x:Bind Id}" Click="DeleteNetworkRule_Click" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- 3. Domain & IP Blocklist Subscriptions -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Domain &amp; IP Blocklist Subscriptions" FontWeight="SemiBold" FontSize="15" />
+                            <TextBlock Text="Block telemetry domains or community IP/CIDR threat lists as managed Windows Firewall rules." FontSize="12" Opacity="0.75" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="+ Add Custom Blocklist" Style="{ThemeResource AccentButtonStyle}" Click="AddBlocklist_Click" />
+                    </Grid>
+
+                    <ItemsControl x:Name="BlocklistsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:BlocklistSubscriptionDto">
+                                <Border Margin="0,0,0,8" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="12,10">
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{x:Bind Description}" FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                                            <TextBlock Text="{x:Bind StatusDisplay}" FontSize="11" Foreground="{StaticResource FireBrickAccentBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Button Content="Sync Now" Padding="10,5" FontSize="12" Tag="{x:Bind}" Click="SyncBlocklist_Click" />
+                                            <Button Content="Remove Rules" Padding="10,5" FontSize="12" Tag="{x:Bind}" Click="RemoveBlocklist_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

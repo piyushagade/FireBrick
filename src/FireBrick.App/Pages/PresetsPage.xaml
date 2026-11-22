@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FireBrick.App.Pages.PresetsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:FireBrick.Core.Models">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,24">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Presets &amp; Temporary Rules" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock Text="One-click rule packs for hardening or onboarding, plus auto-expiring temporary rules." Opacity="0.7" />
+            </StackPanel>
+
+            <InfoBar x:Name="PresetsInfoBar" IsOpen="False" IsClosable="True" />
+
+            <!-- Active Temporary Rules -->
+            <StackPanel Spacing="10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Active Temporary Rules" Style="{ThemeResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Refresh" Click="RefreshTempButton_Click" />
+                </Grid>
+
+                <TextBlock x:Name="EmptyTempText" Text="No active temporary rules. You can create one from the Connections Log or Rules page." Opacity="0.65" Visibility="Collapsed" />
+
+                <ItemsControl x:Name="TempRulesList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:TemporaryRuleDto">
+                            <Border Margin="0,0,0,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{x:Bind RuleName}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind ApplicationPath}" FontSize="12" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{x:Bind RemainingDisplay}" VerticalAlignment="Center" Foreground="{StaticResource FireBrickAccentBrush}" FontWeight="SemiBold" />
+                                    <Button Grid.Column="2" Content="Revoke Now" Tag="{x:Bind RuleName}" Click="RevokeTempRule_Click" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Built-in Rule Presets -->
+            <StackPanel Spacing="10">
+                <TextBlock Text="Built-in Rule Presets" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ItemsControl x:Name="PresetsList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:RulePresetDto">
+                            <Border Margin="0,0,0,10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="4">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="15" />
+                                            <Border CornerRadius="4" Padding="6,2" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind Category}" FontSize="11" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" FontSize="13" Opacity="0.75" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Apply Preset" Style="{ThemeResource AccentButtonStyle}" VerticalAlignment="Center" Tag="{x:Bind}" Click="ApplyPreset_Click" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

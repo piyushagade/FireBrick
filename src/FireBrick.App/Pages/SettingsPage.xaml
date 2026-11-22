@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FireBrick.App.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16" MaxWidth="920" HorizontalAlignment="Left" Padding="24,16,28,24">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Settings &amp; System Integration" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock Text="Configure FireBrick appearance, WFP auditing, Explorer shell integration, and background service." Opacity="0.7" />
+            </StackPanel>
+
+            <InfoBar x:Name="SettingsInfoBar" IsOpen="False" IsClosable="True" />
+
+            <!-- Appearance -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="App Theme" FontWeight="SemiBold" />
+                        <TextBlock Text="Switch between System, Dark, or Light Fluent theme." FontSize="12" Opacity="0.7" />
+                    </StackPanel>
+                    <ComboBox x:Name="ThemeCombo" Grid.Column="1" Width="150" SelectionChanged="ThemeCombo_SelectionChanged">
+                        <ComboBoxItem Content="System" Tag="System" />
+                        <ComboBoxItem Content="Dark" Tag="Dark" />
+                        <ComboBoxItem Content="Light" Tag="Light" />
+                    </ComboBox>
+                </Grid>
+            </Border>
+
+            <!-- Reverse DNS, GeoIP & Kill Sockets -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="14">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Reverse DNS Lookup (PTR)" FontWeight="SemiBold" />
+                            <TextBlock Text="Resolve remote IP addresses to hostnames in Connections Log and Alerts." FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="ReverseDnsToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="ReverseDnsToggle_Toggled" />
+                    </Grid>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="GeoIP &amp; Organization Lookup" FontWeight="SemiBold" />
+                            <TextBlock Text="Show destination country code and organization (e.g. US • Microsoft) for public remote IPs." FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="GeoIpToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="GeoIpToggle_Toggled" />
+                    </Grid>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Kill Active TCP Connections on Block" FontWeight="SemiBold" />
+                            <TextBlock Text="Immediately sever existing established TCP sockets when you block an application." FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="KillOnBlockToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="KillOnBlockToggle_Toggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Default Temp Rule Duration -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Default Temporary Rule Duration (Minutes)" FontWeight="SemiBold" />
+                        <TextBlock Text="Used when clicking 'Allow Temporarily' from notifications or the Connections Log." FontSize="12" Opacity="0.7" />
+                    </StackPanel>
+                    <NumberBox x:Name="DefaultTempMinsBox" Grid.Column="1" Width="140" Minimum="1" Maximum="1440" SpinButtonPlacementMode="Inline" ValueChanged="DefaultTempMinsBox_ValueChanged" />
+                </Grid>
+            </Border>
+
+            <!-- System Tray Behavior -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="14">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Minimize to System Tray on Close" FontWeight="SemiBold" />
+                            <TextBlock Text="Clicking the window close button hides FireBrick to the notification area instead of exiting." FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="CloseToTrayToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="CloseToTrayToggle_Toggled" />
+                    </Grid>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Start Minimized to System Tray" FontWeight="SemiBold" />
+                            <TextBlock Text="Launch FireBrick quietly in the system tray without opening the main window." FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="StartMinimizedToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="StartMinimizedToggle_Toggled" />
+                    </Grid>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Start FireBrick with Windows" FontWeight="SemiBold" />
+                            <TextBlock Text="Automatically launch FireBrick when you sign into Windows." FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="StartWithWindowsToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="StartWithWindowsToggle_Toggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Explorer Shell Context Menu (WFC Feature) -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Windows Explorer Shell Integration" FontWeight="SemiBold" />
+                        <TextBlock Text="Adds 'FireBrick: Allow/Block through Firewall' to the right-click context menu of .exe files." FontSize="12" Opacity="0.7" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="ShellMenuToggle" Grid.Column="1" OnContent="Enabled" OffContent="Disabled" Toggled="ShellMenuToggle_Toggled" />
+                </Grid>
+            </Border>
+
+            <!-- WFP Audit Policy -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="WFP Connection Auditing Policy" FontWeight="SemiBold" />
+                        <TextBlock Text="Enables Windows Filtering Platform Success/Failure audit events (5152/5156/5157) required for the Connections Log and block notifications." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Enable Auditing" VerticalAlignment="Center" Click="EnableAuditButton_Click" />
+                </Grid>
+            </Border>
+
+            <!-- Elevation & Service -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Privileges &amp; Background Service" FontWeight="SemiBold" />
+                    <TextBlock x:Name="PrivilegeStatusText" FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Relaunch as Administrator" Click="RelaunchAdminButton_Click" />
+                        <Button Content="Install Service" Click="InstallServiceButton_Click" />
+                        <Button Content="Start Service" Click="StartServiceButton_Click" />
+                        <Button Content="Stop Service" Click="StopServiceButton_Click" />
+                        <Button Content="Uninstall Service" Click="UninstallServiceButton_Click" />
+                        <Button Content="Copy Install Command" Click="CopyServiceCommandButton_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- About & Version -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="About FireBrick" FontWeight="SemiBold" />
+                    <TextBlock x:Name="AboutVersionText" FontSize="12" Opacity="0.75" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
