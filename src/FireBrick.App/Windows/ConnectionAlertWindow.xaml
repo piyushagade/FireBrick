@@ -43,11 +43,16 @@
                 <StackPanel Spacing="6">
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="AppNameText" Text="application.exe" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                        <Border x:Name="TrustBadgeBorder" Grid.Column="1" CornerRadius="10" Padding="8,3" VerticalAlignment="Center" Background="{StaticResource FireBrickMutedBadgeBg}">
+                        <Grid Grid.Column="0" Width="22" Height="22" VerticalAlignment="Center">
+                            <Image x:Name="AppIconImage" Width="20" Height="20" Stretch="Uniform" Visibility="Collapsed" />
+                            <FontIcon x:Name="AppIconFallback" Glyph="&#xECAA;" FontSize="16" Opacity="0.7" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Grid>
+                        <TextBlock x:Name="AppNameText" Grid.Column="1" Text="application.exe" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Border x:Name="TrustBadgeBorder" Grid.Column="2" CornerRadius="10" Padding="8,3" VerticalAlignment="Center" Background="{StaticResource FireBrickMutedBadgeBg}">
                             <StackPanel Orientation="Horizontal" Spacing="5">
                                 <FontIcon x:Name="TrustBadgeIcon" Glyph="&#xE73E;" FontSize="11" VerticalAlignment="Center" />
                                 <TextBlock x:Name="TrustBadgeText" Text="Trusted" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />

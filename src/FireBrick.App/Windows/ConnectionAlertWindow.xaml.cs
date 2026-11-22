@@ -189,6 +189,17 @@ public sealed partial class ConnectionAlertWindow : Window
             ? "Publisher: Unknown"
             : $"Publisher: {evt.Publisher}";
 
+        // App icon (cached synchronously when available, otherwise loaded asynchronously)
+        if (AppIconHelper.TryGetCachedIcon(evt.ApplicationPath, out var cachedIcon))
+        {
+            ApplyAppIcon(cachedIcon);
+        }
+        else
+        {
+            ApplyAppIcon(null);
+            _ = LoadAppIconAsync(evt);
+        }
+
         switch (evt.SignatureStatus)
         {
             case SignatureTrustStatus.Trusted:
@@ -248,6 +259,38 @@ public sealed partial class ConnectionAlertWindow : Window
         else
         {
             RemoteHostText.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void ApplyAppIcon(ImageSource? icon)
+    {
+        if (icon is not null)
+        {
+            AppIconImage.Source = icon;
+            AppIconImage.Visibility = Visibility.Visible;
+            AppIconFallback.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            AppIconImage.Source = null;
+            AppIconImage.Visibility = Visibility.Collapsed;
+            AppIconFallback.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async Task LoadAppIconAsync(ConnectionEventDto evt)
+    {
+        try
+        {
+            var icon = await AppIconHelper.GetAppIconAsync(evt.ApplicationPath);
+            if (_queue.Count > 0 && _currentIndex < _queue.Count && ReferenceEquals(_queue[_currentIndex], evt))
+            {
+                ApplyAppIcon(icon);
+            }
+        }
+        catch
+        {
+            // Keep fallback glyph if icon extraction fails
         }
     }
 
