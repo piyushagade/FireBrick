@@ -2,8 +2,11 @@ using System.Diagnostics;
 using FireBrick.App.Services;
 using FireBrick.Core.Engine;
 using FireBrick.Core.Models;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 
 namespace FireBrick.App.Pages;
 
@@ -69,11 +72,21 @@ public sealed partial class DashboardPage : Page
             InvalidRulesText.Text = status.InvalidRulesCount.ToString("N0");
             CleanupInvalidLink.Visibility = status.InvalidRulesCount > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-            NetworkProfilesSummary.Text =
-                $"Domain: {(status.DomainFirewallEnabled ? "ON" : "OFF")}   •   " +
-                $"Private: {(status.PrivateFirewallEnabled ? "ON" : "OFF")}   •   " +
-                $"Public: {(status.PublicFirewallEnabled ? "ON" : "OFF")}   •   " +
-                $"WFP Auditing: {(status.IsAuditPolicyEnabled ? "Enabled" : "Not Enabled")}";
+            var onBrush = new SolidColorBrush(Color.FromArgb(255, 16, 185, 129));
+            var offBrush = new SolidColorBrush(Color.FromArgb(255, 156, 163, 175));
+            var warnBrush = new SolidColorBrush(Color.FromArgb(255, 245, 158, 11));
+
+            DomainDot.Fill = status.DomainFirewallEnabled ? onBrush : offBrush;
+            DomainPillText.Text = $"Domain: {(status.DomainFirewallEnabled ? "ON" : "OFF")}";
+
+            PrivateDot.Fill = status.PrivateFirewallEnabled ? onBrush : offBrush;
+            PrivatePillText.Text = $"Private: {(status.PrivateFirewallEnabled ? "ON" : "OFF")}";
+
+            PublicDot.Fill = status.PublicFirewallEnabled ? onBrush : offBrush;
+            PublicPillText.Text = $"Public: {(status.PublicFirewallEnabled ? "ON" : "OFF")}";
+
+            AuditDot.Fill = status.IsAuditPolicyEnabled ? onBrush : warnBrush;
+            AuditPillText.Text = $"WFP Auditing: {(status.IsAuditPolicyEnabled ? "Enabled" : "Off")}";
 
             HighProfileRadio.IsChecked = status.ProfileMode == FirewallProfileMode.HighFiltering;
             MediumProfileRadio.IsChecked = status.ProfileMode == FirewallProfileMode.MediumFiltering;

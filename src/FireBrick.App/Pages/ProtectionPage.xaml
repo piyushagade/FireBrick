@@ -26,7 +26,7 @@
                             <TextBlock Text="Rule Lock &amp; Tamper Protection" FontWeight="SemiBold" FontSize="15" />
                             <TextBlock Text="Monitors Windows Defender Firewall for unauthorized third-party rule injections and automatically reverts them." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="RuleLockToggle" Grid.Column="1" OnContent="Armed" OffContent="Off" Toggled="RuleLockToggle_Toggled" />
+                        <ToggleSwitch x:Name="RuleLockToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" VerticalAlignment="Center" OnContent="On" OffContent="Off" Toggled="RuleLockToggle_Toggled" />
                     </Grid>
 
                     <TextBlock x:Name="RuleLockEmptyText" Text="No unauthorized rule injections detected." FontSize="12" Opacity="0.65" />
@@ -64,9 +64,9 @@
                             <TextBlock Text="Auto-Switching Network Profiles" FontWeight="SemiBold" FontSize="15" />
                             <TextBlock x:Name="CurrentNetworkText" Text="Current Network: Detecting..." FontSize="12" Opacity="0.75" />
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                            <ToggleSwitch x:Name="AutoSwitchToggle" OnContent="Auto-Switch" OffContent="Off" Toggled="AutoSwitchToggle_Toggled" />
-                            <Button Content="+ Add Network Rule" Click="AddNetworkRule_Click" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <Button Content="+ Add Network Rule" Click="AddNetworkRule_Click" VerticalAlignment="Center" />
+                            <ToggleSwitch x:Name="AutoSwitchToggle" MinWidth="0" OnContent="On" OffContent="Off" Toggled="AutoSwitchToggle_Toggled" VerticalAlignment="Center" />
                         </StackPanel>
                     </Grid>
 

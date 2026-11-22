@@ -44,7 +44,7 @@
                             <TextBlock Text="Reverse DNS Lookup (PTR)" FontWeight="SemiBold" />
                             <TextBlock Text="Resolve remote IP addresses to hostnames in Connections Log and Alerts." FontSize="12" Opacity="0.7" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="ReverseDnsToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="ReverseDnsToggle_Toggled" />
+                        <ToggleSwitch x:Name="ReverseDnsToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="ReverseDnsToggle_Toggled" />
                     </Grid>
 
                     <Grid>
@@ -56,7 +56,7 @@
                             <TextBlock Text="GeoIP &amp; Organization Lookup" FontWeight="SemiBold" />
                             <TextBlock Text="Show destination country code and organization (e.g. US • Microsoft) for public remote IPs." FontSize="12" Opacity="0.7" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="GeoIpToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="GeoIpToggle_Toggled" />
+                        <ToggleSwitch x:Name="GeoIpToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="GeoIpToggle_Toggled" />
                     </Grid>
 
                     <Grid>
@@ -68,7 +68,7 @@
                             <TextBlock Text="Kill Active TCP Connections on Block" FontWeight="SemiBold" />
                             <TextBlock Text="Immediately sever existing established TCP sockets when you block an application." FontSize="12" Opacity="0.7" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="KillOnBlockToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="KillOnBlockToggle_Toggled" />
+                        <ToggleSwitch x:Name="KillOnBlockToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="KillOnBlockToggle_Toggled" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -84,7 +84,7 @@
                         <TextBlock Text="Default Temporary Rule Duration (Minutes)" FontWeight="SemiBold" />
                         <TextBlock Text="Used when clicking 'Allow Temporarily' from notifications or the Connections Log." FontSize="12" Opacity="0.7" />
                     </StackPanel>
-                    <NumberBox x:Name="DefaultTempMinsBox" Grid.Column="1" Width="140" Minimum="1" Maximum="1440" SpinButtonPlacementMode="Inline" ValueChanged="DefaultTempMinsBox_ValueChanged" />
+                    <NumberBox x:Name="DefaultTempMinsBox" Grid.Column="1" Width="185" Minimum="1" Maximum="1440" SpinButtonPlacementMode="Inline" ValueChanged="DefaultTempMinsBox_ValueChanged" />
                 </Grid>
             </Border>
 
@@ -100,7 +100,7 @@
                             <TextBlock Text="Minimize to System Tray on Close" FontWeight="SemiBold" />
                             <TextBlock Text="Clicking the window close button hides FireBrick to the notification area instead of exiting." FontSize="12" Opacity="0.7" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="CloseToTrayToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="CloseToTrayToggle_Toggled" />
+                        <ToggleSwitch x:Name="CloseToTrayToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="CloseToTrayToggle_Toggled" />
                     </Grid>
 
                     <Grid>
@@ -112,7 +112,7 @@
                             <TextBlock Text="Start Minimized to System Tray" FontWeight="SemiBold" />
                             <TextBlock Text="Launch FireBrick quietly in the system tray without opening the main window." FontSize="12" Opacity="0.7" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="StartMinimizedToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="StartMinimizedToggle_Toggled" />
+                        <ToggleSwitch x:Name="StartMinimizedToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="StartMinimizedToggle_Toggled" />
                     </Grid>
 
                     <Grid>
@@ -124,7 +124,7 @@
                             <TextBlock Text="Start FireBrick with Windows" FontWeight="SemiBold" />
                             <TextBlock Text="Automatically launch FireBrick when you sign into Windows." FontSize="12" Opacity="0.7" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="StartWithWindowsToggle" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="StartWithWindowsToggle_Toggled" />
+                        <ToggleSwitch x:Name="StartWithWindowsToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="StartWithWindowsToggle_Toggled" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -140,7 +140,7 @@
                         <TextBlock Text="Windows Explorer Shell Integration" FontWeight="SemiBold" />
                         <TextBlock Text="Adds 'FireBrick: Allow/Block through Firewall' to the right-click context menu of .exe files." FontSize="12" Opacity="0.7" />
                     </StackPanel>
-                    <ToggleSwitch x:Name="ShellMenuToggle" Grid.Column="1" OnContent="Enabled" OffContent="Disabled" Toggled="ShellMenuToggle_Toggled" />
+                    <ToggleSwitch x:Name="ShellMenuToggle" Grid.Column="1" MinWidth="0" HorizontalAlignment="Right" OnContent="On" OffContent="Off" Toggled="ShellMenuToggle_Toggled" />
                 </Grid>
             </Border>
 

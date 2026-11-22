@@ -94,6 +94,7 @@ public sealed partial class MainWindow : Window
         _alertWindow?.ForceClose();
         _trayIcon.Dispose();
         FirewallBackendService.Instance.Dispose();
+        (Application.Current as App)?.ReleaseSingleInstanceLock();
         Close();
         Application.Current.Exit();
     }
@@ -118,7 +119,11 @@ public sealed partial class MainWindow : Window
             var status = await FirewallBackendService.Instance.GetStatusAsync();
             _lastProfile = status.ProfileMode;
             _lastNotif = status.NotificationMode;
-            DispatcherQueue.TryEnqueue(() => _trayIcon.UpdateState(_lastProfile, _lastNotif));
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _trayIcon.UpdateState(_lastProfile, _lastNotif);
+                UpdateTitleShieldColor(_lastProfile);
+            });
         }
         catch { }
     }
@@ -126,7 +131,23 @@ public sealed partial class MainWindow : Window
     private void OnProfileModeChanged(object? sender, FirewallProfileMode mode)
     {
         _lastProfile = mode;
-        DispatcherQueue.TryEnqueue(() => _trayIcon.UpdateState(_lastProfile, _lastNotif));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _trayIcon.UpdateState(_lastProfile, _lastNotif);
+            UpdateTitleShieldColor(_lastProfile);
+        });
+    }
+
+    private void UpdateTitleShieldColor(FirewallProfileMode mode)
+    {
+        var color = mode switch
+        {
+            FirewallProfileMode.HighFiltering => global::Windows.UI.Color.FromArgb(255, 232, 17, 35),    // Vivid Red
+            FirewallProfileMode.MediumFiltering => global::Windows.UI.Color.FromArgb(255, 245, 158, 11), // Vivid Amber
+            FirewallProfileMode.LowFiltering => global::Windows.UI.Color.FromArgb(255, 16, 185, 129),    // Emerald Green
+            _ => global::Windows.UI.Color.FromArgb(255, 136, 142, 150)                                   // Neutral Gray
+        };
+        TitleShieldIcon.Foreground = new SolidColorBrush(color);
     }
 
     private void OnNotificationModeChanged(object? sender, NotificationMode mode)
@@ -238,6 +259,9 @@ public sealed partial class MainWindow : Window
                 break;
             case "protection":
                 ContentFrame.Navigate(typeof(ProtectionPage));
+                break;
+            case "donate":
+                ContentFrame.Navigate(typeof(DonatePage));
                 break;
         }
     }

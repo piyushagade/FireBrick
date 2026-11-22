@@ -221,11 +221,11 @@ public sealed partial class ConnectionAlertWindow : Window
         RemoteEndpointText.Text = evt.RemoteEndpoint;
         ProtocolPidText.Text = $"{evt.Protocol}  •  PID {evt.ProcessId}";
 
-        // Scope labels
+        // Scope labels (concise so dropdown fits cleanly inside the alert card)
         ScopePortItem.Content = evt.RemotePort > 0
-            ? $"Remote port only ({evt.Protocol} {evt.RemotePort})"
+            ? $"Port only ({evt.Protocol} {evt.RemotePort})"
             : $"Protocol only ({evt.Protocol})";
-        ScopeIpPortItem.Content = $"This remote IP & port only ({evt.RemoteEndpoint})";
+        ScopeIpPortItem.Content = $"IP & port ({evt.RemoteEndpoint})";
         ScopeCombo.SelectedIndex = 0;
 
         // Default temp button text

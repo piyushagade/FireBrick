@@ -231,9 +231,10 @@ public sealed class SecurityAuditMonitor : IDisposable
         }
 
         dataMap.TryGetValue("Application", out var rawApp);
-        var win32Path = DevicePathConverter.ConvertToWin32Path(rawApp);
-        var appName = string.IsNullOrWhiteSpace(win32Path)
-            ? "System"
+        bool isNoProcess = string.IsNullOrWhiteSpace(rawApp) || rawApp.Trim() == "-";
+        var win32Path = isNoProcess ? string.Empty : DevicePathConverter.ConvertToWin32Path(rawApp);
+        var appName = isNoProcess
+            ? "System / Kernel"
             : (win32Path.Equals("System", StringComparison.OrdinalIgnoreCase) ? "System" : Path.GetFileName(win32Path));
 
         dataMap.TryGetValue("Direction", out var dirRaw);

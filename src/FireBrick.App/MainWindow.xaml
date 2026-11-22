@@ -24,7 +24,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <FontIcon Grid.Column="0" Glyph="&#xEA18;" FontSize="18" Foreground="{StaticResource FireBrickAccentBrush}" VerticalAlignment="Center" />
+            <FontIcon x:Name="TitleShieldIcon" Grid.Column="0" Glyph="&#xEA18;" FontSize="18" Foreground="{StaticResource FireBrickAccentBrush}" VerticalAlignment="Center" />
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <TextBlock Text="FireBrick" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
                 <TextBlock Text="Windows Firewall Control" FontSize="12" Opacity="0.65" VerticalAlignment="Center" />
@@ -59,12 +59,12 @@
                 </NavigationViewItem>
                 <NavigationViewItem Content="Applications" Tag="apps">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE71D;" />
+                        <FontIcon Glyph="&#xF0E2;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Firewall Rules" Tag="rules">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8FD;" />
+                        <FontIcon Glyph="&#xE71C;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Connections Log" Tag="connections">
@@ -83,6 +83,14 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
+
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Donate" Tag="donate">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xEB51;" Foreground="#E84855" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
 
             <Grid>
                 <Frame x:Name="ContentFrame" />

@@ -1,3 +1,4 @@
+using System.Threading;
 using FireBrick.App.Services;
 using FireBrick.Core.Models;
 using Microsoft.UI.Xaml;
@@ -6,7 +7,13 @@ namespace FireBrick.App;
 
 public partial class App : Application
 {
-    private Window? _window;
+    private const string SingleInstanceMutexName = @"Local\FireBrick_SingleInstance_Mutex_v1";
+    private const string ActivateEventName = @"Local\FireBrick_ActivateExisting_Event_v1";
+
+    private Mutex? _instanceMutex;
+    private EventWaitHandle? _activateEvent;
+    private CancellationTokenSource? _activateListenerCts;
+    private MainWindow? _mainWindow;
 
     public App()
     {
@@ -29,34 +36,91 @@ public partial class App : Application
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        await FirewallBackendService.Instance.InitializeAsync();
-
-        // Support Explorer shell context menu CLI verbs: --allow "<exe>" or --block "<exe>"
+        // Handle Explorer shell context menu verbs first
         var cmdArgs = Environment.GetCommandLineArgs();
-        if (cmdArgs.Length >= 3 && (cmdArgs[1] == "--allow" || cmdArgs[1] == "--block"))
+        bool isShellVerb = cmdArgs.Length >= 3 && (cmdArgs[1] == "--allow" || cmdArgs[1] == "--block");
+
+        _instanceMutex = new Mutex(true, SingleInstanceMutexName, out bool createdNew);
+
+        if (!createdNew)
         {
-            var action = cmdArgs[1] == "--allow" ? RuleAction.Allow : RuleAction.Block;
-            var targetPath = cmdArgs[2];
-            try
+            // Another instance is already running
+            if (isShellVerb)
             {
-                await FirewallBackendService.Instance.CreateQuickRuleAsync(targetPath, action, RuleDirection.Outbound);
+                await FirewallBackendService.Instance.InitializeAsync();
+                var action = cmdArgs[1] == "--allow" ? RuleAction.Allow : RuleAction.Block;
+                try { await FirewallBackendService.Instance.CreateQuickRuleAsync(cmdArgs[2], action, RuleDirection.Outbound); } catch { }
             }
-            catch
+            else
             {
-                // Fall through to launch UI so user sees elevation prompt if needed
+                // Signal existing instance to restore and focus its window
+                try
+                {
+                    using var evt = EventWaitHandle.OpenExisting(ActivateEventName);
+                    evt.Set();
+                }
+                catch { }
             }
+
+            Environment.Exit(0);
+            return;
         }
 
-        var mainWindow = new MainWindow();
-        _window = mainWindow;
+        await FirewallBackendService.Instance.InitializeAsync();
+
+        if (isShellVerb)
+        {
+            var action = cmdArgs[1] == "--allow" ? RuleAction.Allow : RuleAction.Block;
+            try { await FirewallBackendService.Instance.CreateQuickRuleAsync(cmdArgs[2], action, RuleDirection.Outbound); } catch { }
+        }
+
+        _mainWindow = new MainWindow();
+        StartActivationListener();
 
         if (FirewallBackendService.Instance.GetSettings().StartMinimizedToTray)
         {
-            mainWindow.HideToTray();
+            _mainWindow.HideToTray();
         }
         else
         {
-            mainWindow.Activate();
+            _mainWindow.Activate();
         }
+    }
+
+    private void StartActivationListener()
+    {
+        _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        _activateListenerCts = new CancellationTokenSource();
+        var token = _activateListenerCts.Token;
+
+        var thread = new Thread(() =>
+        {
+            var handles = new WaitHandle[] { _activateEvent, token.WaitHandle };
+            while (!token.IsCancellationRequested)
+            {
+                int signaled = WaitHandle.WaitAny(handles);
+                if (signaled == 0)
+                {
+                    _mainWindow?.DispatcherQueue.TryEnqueue(() => _mainWindow.RestoreFromTray());
+                }
+                else
+                {
+                    break;
+                }
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "FireBrick.SingleInstanceListener"
+        };
+        thread.Start();
+    }
+
+    public void ReleaseSingleInstanceLock()
+    {
+        try { _activateListenerCts?.Cancel(); } catch { }
+        try { _activateEvent?.Dispose(); } catch { }
+        try { _instanceMutex?.ReleaseMutex(); } catch { }
+        try { _instanceMutex?.Dispose(); } catch { }
     }
 }

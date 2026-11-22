@@ -357,10 +357,10 @@ public sealed class TrayIconService : IDisposable
         const int size = 32;
         var (r, g, b) = mode switch
         {
-            FirewallProfileMode.HighFiltering => ((byte)0xD1, (byte)0x34, (byte)0x38),   // Red
-            FirewallProfileMode.MediumFiltering => ((byte)0xE0, (byte)0x5A, (byte)0x2B), // FireBrick Orange
-            FirewallProfileMode.LowFiltering => ((byte)0x10, (byte)0x89, (byte)0x3E),    // Green
-            _ => ((byte)0x7A, (byte)0x7A, (byte)0x7A)                                    // Gray
+            FirewallProfileMode.HighFiltering => ((byte)0xE8, (byte)0x11, (byte)0x23),   // Vivid Red (Lockdown)
+            FirewallProfileMode.MediumFiltering => ((byte)0xF5, (byte)0x9E, (byte)0x0B), // Vivid Amber (Recommended)
+            FirewallProfileMode.LowFiltering => ((byte)0x10, (byte)0xB9, (byte)0x81),    // Emerald Green (Default)
+            _ => ((byte)0x88, (byte)0x8E, (byte)0x96)                                    // Neutral Gray (Disabled)
         };
 
         var pixels = new byte[size * size * 4];

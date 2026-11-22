@@ -105,9 +105,9 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="Rule Scope:" FontSize="12" Opacity="0.8" VerticalAlignment="Center" />
                 <ComboBox x:Name="ScopeCombo" Grid.Column="1" HorizontalAlignment="Stretch" SelectedIndex="0">
-                    <ComboBoxItem Content="Any remote port &amp; IP (Recommended)" Tag="Any" />
-                    <ComboBoxItem x:Name="ScopePortItem" Content="Remote port only" Tag="PortOnly" />
-                    <ComboBoxItem x:Name="ScopeIpPortItem" Content="This remote IP &amp; port only" Tag="IpAndPort" />
+                    <ComboBoxItem Content="Any IP &amp; port" Tag="Any" />
+                    <ComboBoxItem x:Name="ScopePortItem" Content="Port only" Tag="PortOnly" />
+                    <ComboBoxItem x:Name="ScopeIpPortItem" Content="IP &amp; port" Tag="IpAndPort" />
                 </ComboBox>
             </Grid>
         </StackPanel>

@@ -546,6 +546,12 @@ public sealed class FirewallBackendService : IDisposable
         if (evt.Action != RuleAction.Block || evt.Direction != RuleDirection.Outbound)
             return;
 
+        // Skip raw kernel packet drops (e.g. Event 5152 ICMP/PID 0 with Application "-") from interactive app prompts
+        if (string.IsNullOrWhiteSpace(evt.ApplicationPath) ||
+            evt.ApplicationPath.Trim() == "-" ||
+            (evt.EventId == 5152 && evt.ProcessId == 0))
+            return;
+
         var mode = _settingsStore.Get().NotificationMode;
         if (mode == NotificationMode.Disabled) return;
 
