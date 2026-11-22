@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="FireBrick.App.Windows.TrayFlyoutWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="FireBrick Tray">
+
+    <Grid x:Name="RootGrid" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" Padding="8">
+        <Grid.Resources>
+            <Style x:Key="TrayMenuItemStyle" TargetType="Button">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Padding" Value="10,7" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+        </Grid.Resources>
+
+        <!-- MAIN MENU VIEW -->
+        <StackPanel x:Name="MainView" Spacing="2">
+            <!-- Header -->
+            <Grid Padding="10,6,10,8" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon x:Name="HeaderShieldIcon" Grid.Column="0" Glyph="&#xEA18;" FontSize="16" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="FireBrick" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                <Border Grid.Column="2" CornerRadius="10" Padding="8,2" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <Ellipse x:Name="HeaderStatusDot" Width="7" Height="7" Fill="LimeGreen" VerticalAlignment="Center" />
+                        <TextBlock x:Name="HeaderStatusText" Text="Service" FontSize="11" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <MenuFlyoutSeparator Margin="4,0" />
+
+            <!-- Filtering Profile -->
+            <TextBlock Text="FILTERING PROFILE" FontSize="10" FontWeight="SemiBold" Opacity="0.55" Margin="10,4,10,2" />
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="HighFiltering" Click="ProfileItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#E81123" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="High Filtering (Lockdown)" VerticalAlignment="Center" />
+                    <FontIcon x:Name="CheckHigh" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="MediumFiltering" Click="ProfileItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#F59E0B" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="Medium Filtering" VerticalAlignment="Center" />
+                    <FontIcon x:Name="CheckMedium" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="LowFiltering" Click="ProfileItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#10B981" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="Low Filtering (Default)" VerticalAlignment="Center" />
+                    <FontIcon x:Name="CheckLow" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="NoFiltering" Click="ProfileItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#888E96" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="No Filtering (Disabled)" VerticalAlignment="Center" />
+                    <FontIcon x:Name="CheckNone" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <MenuFlyoutSeparator Margin="4,3" />
+
+            <!-- Submenu Triggers -->
+            <Button Style="{StaticResource TrayMenuItemStyle}" Click="OpenNotifSubmenu_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Grid.Column="0" Glyph="&#xEA8F;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Grid.Column="1" Text="Notifications" VerticalAlignment="Center" />
+                    <TextBlock x:Name="NotifSummaryText" Grid.Column="2" Text="Alerts" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+                    <FontIcon Grid.Column="3" Glyph="&#xE76C;" FontSize="10" Opacity="0.65" VerticalAlignment="Center" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Click="OpenNavSubmenu_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Grid.Column="0" Glyph="&#xF0E2;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Grid.Column="1" Text="Go to..." VerticalAlignment="Center" />
+                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="10" Opacity="0.65" VerticalAlignment="Center" />
+                </Grid>
+            </Button>
+
+            <MenuFlyoutSeparator Margin="4,3" />
+
+            <!-- Open & Exit -->
+            <Button Style="{StaticResource TrayMenuItemStyle}" Click="OpenMain_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xE80F;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Open FireBrick" FontWeight="SemiBold" />
+                </StackPanel>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Click="Exit_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xE7E8;" FontSize="13" Foreground="#E84855" />
+                    <TextBlock Text="Exit FireBrick" Foreground="#E84855" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+
+        <!-- NOTIFICATIONS SUBMENU VIEW -->
+        <StackPanel x:Name="NotifSubmenuView" Spacing="2" Visibility="Collapsed">
+            <Button Style="{StaticResource TrayMenuItemStyle}" Click="BackToMain_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72B;" FontSize="12" Opacity="0.8" />
+                    <TextBlock Text="Notifications" FontWeight="SemiBold" />
+                </StackPanel>
+            </Button>
+            <MenuFlyoutSeparator Margin="4,2" />
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="Disabled" Click="NotifItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="1">
+                        <TextBlock Text="Disabled" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="Log silently without popups" FontSize="11" Opacity="0.65" />
+                    </StackPanel>
+                    <FontIcon x:Name="CheckNotifDisabled" Grid.Column="1" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="DisplayNotifications" Click="NotifItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="1">
+                        <TextBlock Text="Display Alerts" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="Show popup for blocked outbound apps" FontSize="11" Opacity="0.65" />
+                    </StackPanel>
+                    <FontIcon x:Name="CheckNotifDisplay" Grid.Column="1" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="LowNotification" Click="NotifItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="1">
+                        <TextBlock Text="Unsigned Only" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="Only prompt for unsigned executables" FontSize="11" Opacity="0.65" />
+                    </StackPanel>
+                    <FontIcon x:Name="CheckNotifLow" Grid.Column="1" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="LearningMode" Click="NotifItem_Click">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="1">
+                        <TextBlock Text="Learning Mode" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="Auto-allow signed outbound apps" FontSize="11" Opacity="0.65" />
+                    </StackPanel>
+                    <FontIcon x:Name="CheckNotifLearning" Grid.Column="1" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+        </StackPanel>
+
+        <!-- GO TO SUBMENU VIEW -->
+        <StackPanel x:Name="NavSubmenuView" Spacing="2" Visibility="Collapsed">
+            <Button Style="{StaticResource TrayMenuItemStyle}" Click="BackToMain_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72B;" FontSize="12" Opacity="0.8" />
+                    <TextBlock Text="Go to..." FontWeight="SemiBold" />
+                </StackPanel>
+            </Button>
+            <MenuFlyoutSeparator Margin="4,2" />
+
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="dashboard" Click="NavItem_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xE80F;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Dashboard" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="apps" Click="NavItem_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xF0E2;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Applications" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="rules" Click="NavItem_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xE71C;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Firewall Rules" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="connections" Click="NavItem_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xE774;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Connections Log" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="presets" Click="NavItem_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xE823;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Presets &amp; Temp Rules" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource TrayMenuItemStyle}" Tag="protection" Click="NavItem_Click">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <FontIcon Glyph="&#xEA18;" FontSize="13" Opacity="0.85" />
+                    <TextBlock Text="Protection &amp; Lists" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

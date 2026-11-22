@@ -24,6 +24,9 @@ public sealed class TrayIconService : IDisposable
     private const uint NIF_MESSAGE = 0x00000001;
     private const uint NIF_ICON = 0x00000002;
     private const uint NIF_TIP = 0x00000004;
+    private const uint NIF_INFO = 0x00000010;
+    private const uint NIIF_USER = 0x00000004;
+    private const uint NIIF_NOSOUND = 0x00000010;
 
     private const uint MF_STRING = 0x00000000;
     private const uint MF_SEPARATOR = 0x00000800;
@@ -58,10 +61,7 @@ public sealed class TrayIconService : IDisposable
     private bool _disposed;
 
     public event Action? OpenRequested;
-    public event Action<string>? NavigateRequested;
-    public event Action<FirewallProfileMode>? ProfileSwitchRequested;
-    public event Action<NotificationMode>? NotificationSwitchRequested;
-    public event Action? ExitRequested;
+    public event Action<int, int>? ContextMenuRequested;
 
     private delegate IntPtr SubclassProc(
         IntPtr hWnd,
@@ -186,6 +186,26 @@ public sealed class TrayIconService : IDisposable
         AddOrUpdateIcon();
     }
 
+    public void ShowBalloonTip(string title, string message, bool silent = true)
+    {
+        if (_disposed || !_iconAdded) return;
+
+        var data = new NOTIFYICONDATAW
+        {
+            cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATAW>(),
+            hWnd = _hwnd,
+            uID = 1,
+            uFlags = NIF_INFO,
+            szTip = string.Empty,
+            szInfoTitle = title.Length > 63 ? title[..63] : title,
+            szInfo = message.Length > 255 ? message[..255] : message,
+            dwInfoFlags = NIIF_USER | (silent ? NIIF_NOSOUND : 0u),
+            hBalloonIcon = _currentIcon
+        };
+
+        Shell_NotifyIconW(NIM_MODIFY, ref data);
+    }
+
     private void AddOrUpdateIcon()
     {
         if (_disposed) return;
@@ -234,7 +254,8 @@ public sealed class TrayIconService : IDisposable
             }
             if (mouseMsg == WM_RBUTTONUP || mouseMsg == WM_CONTEXTMENU)
             {
-                ShowContextMenu();
+                GetCursorPos(out var pt);
+                ContextMenuRequested?.Invoke(pt.X, pt.Y);
                 return IntPtr.Zero;
             }
         }
@@ -246,98 +267,6 @@ public sealed class TrayIconService : IDisposable
         }
 
         return DefSubclassProc(hWnd, uMsg, wParam, lParam);
-    }
-
-    private void ShowContextMenu()
-    {
-        IntPtr menu = CreatePopupMenu();
-        IntPtr notifSub = CreatePopupMenu();
-        if (menu == IntPtr.Zero) return;
-
-        try
-        {
-            AppendMenuW(menu, MF_STRING, CMD_OPEN, "Open FireBrick");
-            SetMenuDefaultItem(menu, CMD_OPEN, 0);
-            AppendMenuW(menu, MF_SEPARATOR, 0, null);
-
-            AppendMenuW(menu, MF_STRING | (_currentProfile == FirewallProfileMode.HighFiltering ? MF_CHECKED : 0), CMD_PROFILE_HIGH, "High Filtering (Lockdown)");
-            AppendMenuW(menu, MF_STRING | (_currentProfile == FirewallProfileMode.MediumFiltering ? MF_CHECKED : 0), CMD_PROFILE_MEDIUM, "Medium Filtering (Recommended)");
-            AppendMenuW(menu, MF_STRING | (_currentProfile == FirewallProfileMode.LowFiltering ? MF_CHECKED : 0), CMD_PROFILE_LOW, "Low Filtering (Default)");
-            AppendMenuW(menu, MF_STRING | (_currentProfile == FirewallProfileMode.NoFiltering ? MF_CHECKED : 0), CMD_PROFILE_NONE, "No Filtering (Disabled)");
-
-            AppendMenuW(menu, MF_SEPARATOR, 0, null);
-
-            if (notifSub != IntPtr.Zero)
-            {
-                AppendMenuW(notifSub, MF_STRING | (_currentNotif == NotificationMode.Disabled ? MF_CHECKED : 0), CMD_NOTIF_DISABLED, "Disabled");
-                AppendMenuW(notifSub, MF_STRING | (_currentNotif == NotificationMode.DisplayNotifications ? MF_CHECKED : 0), CMD_NOTIF_DISPLAY, "Display Notifications");
-                AppendMenuW(notifSub, MF_STRING | (_currentNotif == NotificationMode.LowNotification ? MF_CHECKED : 0), CMD_NOTIF_LOW, "Low (Unsigned Only)");
-                AppendMenuW(notifSub, MF_STRING | (_currentNotif == NotificationMode.LearningMode ? MF_CHECKED : 0), CMD_NOTIF_LEARNING, "Learning Mode");
-                AppendMenuW(menu, MF_POPUP, (nuint)notifSub, "Notifications");
-            }
-
-            AppendMenuW(menu, MF_SEPARATOR, 0, null);
-            AppendMenuW(menu, MF_STRING, CMD_NAV_RULES, "Firewall Rules...");
-            AppendMenuW(menu, MF_STRING, CMD_NAV_CONNECTIONS, "Connections Log...");
-            AppendMenuW(menu, MF_SEPARATOR, 0, null);
-            AppendMenuW(menu, MF_STRING, CMD_EXIT, "Exit FireBrick");
-
-            GetCursorPos(out var pt);
-            SetForegroundWindow(_hwnd);
-
-            uint cmd = TrackPopupMenuEx(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_RETURNCMD | TPM_NONOTIFY, pt.X, pt.Y, _hwnd, IntPtr.Zero);
-            HandleMenuCommand(cmd);
-        }
-        finally
-        {
-            DestroyMenu(menu);
-            // notifSub is owned and destroyed by menu
-        }
-    }
-
-    private void HandleMenuCommand(uint cmd)
-    {
-        switch (cmd)
-        {
-            case CMD_OPEN:
-                OpenRequested?.Invoke();
-                break;
-            case CMD_PROFILE_HIGH:
-                ProfileSwitchRequested?.Invoke(FirewallProfileMode.HighFiltering);
-                break;
-            case CMD_PROFILE_MEDIUM:
-                ProfileSwitchRequested?.Invoke(FirewallProfileMode.MediumFiltering);
-                break;
-            case CMD_PROFILE_LOW:
-                ProfileSwitchRequested?.Invoke(FirewallProfileMode.LowFiltering);
-                break;
-            case CMD_PROFILE_NONE:
-                ProfileSwitchRequested?.Invoke(FirewallProfileMode.NoFiltering);
-                break;
-            case CMD_NOTIF_DISABLED:
-                NotificationSwitchRequested?.Invoke(NotificationMode.Disabled);
-                break;
-            case CMD_NOTIF_DISPLAY:
-                NotificationSwitchRequested?.Invoke(NotificationMode.DisplayNotifications);
-                break;
-            case CMD_NOTIF_LOW:
-                NotificationSwitchRequested?.Invoke(NotificationMode.LowNotification);
-                break;
-            case CMD_NOTIF_LEARNING:
-                NotificationSwitchRequested?.Invoke(NotificationMode.LearningMode);
-                break;
-            case CMD_NAV_RULES:
-                OpenRequested?.Invoke();
-                NavigateRequested?.Invoke("rules");
-                break;
-            case CMD_NAV_CONNECTIONS:
-                OpenRequested?.Invoke();
-                NavigateRequested?.Invoke("connections");
-                break;
-            case CMD_EXIT:
-                ExitRequested?.Invoke();
-                break;
-        }
     }
 
     private static string FormatProfileName(FirewallProfileMode mode) => mode switch

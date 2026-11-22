@@ -19,7 +19,9 @@ public sealed partial class MainWindow : Window
     private readonly TrayIconService _trayIcon;
     private readonly IntPtr _hwnd;
     private ConnectionAlertWindow? _alertWindow;
+    private TrayFlyoutWindow? _trayFlyout;
     private bool _isExiting;
+    private bool _shownMinimizeHint;
     private FirewallProfileMode _lastProfile = FirewallProfileMode.LowFiltering;
     private NotificationMode _lastNotif = NotificationMode.DisplayNotifications;
 
@@ -53,17 +55,10 @@ public sealed partial class MainWindow : Window
         VersionBadgeText.Text = $"v{ver}";
         NavView.IsPaneOpen = FirewallBackendService.Instance.GetSettings().IsSidebarOpen;
 
-        // Initialize System Tray Icon & Flyout Menu
+        // Initialize System Tray Icon & Custom WinUI 3 Flyout Menu
         _trayIcon = new TrayIconService(_hwnd);
         _trayIcon.OpenRequested += () => DispatcherQueue.TryEnqueue(RestoreFromTray);
-        _trayIcon.NavigateRequested += tag => DispatcherQueue.TryEnqueue(() =>
-        {
-            RestoreFromTray();
-            NavigateToTag(tag);
-        });
-        _trayIcon.ProfileSwitchRequested += mode => DispatcherQueue.TryEnqueue(() => _ = SwitchProfileFromTrayAsync(mode));
-        _trayIcon.NotificationSwitchRequested += mode => DispatcherQueue.TryEnqueue(() => _ = SwitchNotificationFromTrayAsync(mode));
-        _trayIcon.ExitRequested += () => DispatcherQueue.TryEnqueue(ExitApplication);
+        _trayIcon.ContextMenuRequested += (x, y) => DispatcherQueue.TryEnqueue(() => ShowTrayFlyout(x, y));
 
         var svc = FirewallBackendService.Instance;
         svc.BlockedConnectionPromptRequested += OnBlockedConnectionPromptRequested;
@@ -83,14 +78,38 @@ public sealed partial class MainWindow : Window
         SetForegroundWindow(_hwnd);
     }
 
-    public void HideToTray()
+    public void HideToTray(string? notificationTitle = null, string? notificationMessage = null)
     {
         AppWindow.Hide();
+        if (!string.IsNullOrWhiteSpace(notificationTitle) && !string.IsNullOrWhiteSpace(notificationMessage))
+        {
+            _trayIcon.ShowBalloonTip(notificationTitle, notificationMessage);
+        }
+    }
+
+    private void ShowTrayFlyout(int x, int y)
+    {
+        if (_trayFlyout == null)
+        {
+            _trayFlyout = new TrayFlyoutWindow();
+            _trayFlyout.OpenRequested += RestoreFromTray;
+            _trayFlyout.NavigateRequested += tag =>
+            {
+                RestoreFromTray();
+                NavigateToTag(tag);
+            };
+            _trayFlyout.ProfileSwitchRequested += mode => _ = SwitchProfileFromTrayAsync(mode);
+            _trayFlyout.NotificationSwitchRequested += mode => _ = SwitchNotificationFromTrayAsync(mode);
+            _trayFlyout.ExitRequested += ExitApplication;
+        }
+
+        _trayFlyout.ShowAt(x, y, _lastProfile, _lastNotif);
     }
 
     public void ExitApplication()
     {
         _isExiting = true;
+        _trayFlyout?.ForceClose();
         _alertWindow?.ForceClose();
         _trayIcon.Dispose();
         FirewallBackendService.Instance.Dispose();
@@ -104,10 +123,19 @@ public sealed partial class MainWindow : Window
         if (!_isExiting && FirewallBackendService.Instance.GetSettings().CloseToTray)
         {
             args.Cancel = true;
-            HideToTray();
+            if (!_shownMinimizeHint)
+            {
+                _shownMinimizeHint = true;
+                HideToTray("FireBrick is still running", "Minimized to the system tray. Right-click the shield icon to switch profiles or exit.");
+            }
+            else
+            {
+                HideToTray();
+            }
             return;
         }
 
+        _trayFlyout?.ForceClose();
         _alertWindow?.ForceClose();
         _trayIcon.Dispose();
     }

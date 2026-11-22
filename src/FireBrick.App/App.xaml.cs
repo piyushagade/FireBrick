@@ -79,7 +79,9 @@ public partial class App : Application
 
         if (FirewallBackendService.Instance.GetSettings().StartMinimizedToTray)
         {
-            _mainWindow.HideToTray();
+            _mainWindow.HideToTray(
+                "FireBrick is running in the tray",
+                "Click the FireBrick shield icon in your system tray to open the dashboard or switch filtering profiles.");
         }
         else
         {
