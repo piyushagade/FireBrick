@@ -33,12 +33,18 @@ public sealed partial class ConnectionAlertWindow : Window
         nuint uIdSubclass,
         nuint dwRefData);
 
+    private const int ExpandedWidthDip = 420;
+    private const int ExpandedHeightDip = 348;
+    private const int CondensedWidthDip = 396;
+    private const int CondensedHeightDip = 96;
+
     private readonly List<ConnectionEventDto> _queue = new();
     private readonly IntPtr _hwnd;
     private readonly SubclassProc _subclassDelegate;
     private int _currentIndex;
     private bool _positionedOnce;
     private bool _allowClose;
+    private bool _isCompactView;
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hWnd);
@@ -74,13 +80,12 @@ public sealed partial class ConnectionAlertWindow : Window
         _subclassDelegate = WndProcSubclass;
         SetWindowSubclass(_hwnd, _subclassDelegate, 2, 0);
 
-        double scale = Math.Max(1.0, GetDpiForWindow(_hwnd) / 96.0);
-        AppWindow.Resize(new SizeInt32((int)Math.Round(420 * scale), (int)Math.Round(348 * scale)));
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FireBrick.ico");
         if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
         AppWindow.Closing += OnWindowClosing;
 
         ApplyTheme();
+        ApplyViewMode(FirewallBackendService.Instance.GetSettings().CompactAlertView, anchorBottomRight: false);
     }
 
     private IntPtr WndProcSubclass(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, nuint uIdSubclass, nuint dwRefData)
@@ -97,6 +102,11 @@ public sealed partial class ConnectionAlertWindow : Window
     public void EnqueueAlert(ConnectionEventDto evt)
     {
         ApplyTheme();
+        var wantsCompact = FirewallBackendService.Instance.GetSettings().CompactAlertView;
+        if (wantsCompact != _isCompactView)
+        {
+            ApplyViewMode(wantsCompact, anchorBottomRight: _positionedOnce);
+        }
 
         int existingIdx = _queue.FindIndex(x =>
             string.Equals(x.ApplicationPath, evt.ApplicationPath, StringComparison.OrdinalIgnoreCase));
@@ -166,6 +176,47 @@ public sealed partial class ConnectionAlertWindow : Window
         };
     }
 
+    private void ApplyViewMode(bool isCompact, bool anchorBottomRight)
+    {
+        _isCompactView = isCompact;
+
+        RootGrid.RowSpacing = isCompact ? 0 : 10;
+        HeaderTitleText.Text = isCompact ? "Blocked Connection" : "Blocked Outbound Connection";
+
+        CondensedContentPanel.Visibility = isCompact ? Visibility.Visible : Visibility.Collapsed;
+        ExpandedContentPanel.Visibility = isCompact ? Visibility.Collapsed : Visibility.Visible;
+        ExpandedFooterBorder.Visibility = isCompact ? Visibility.Collapsed : Visibility.Visible;
+
+        ViewModeToggleIcon.Glyph = isCompact ? "\uE70D" : "\uE70E";
+        ToolTipService.SetToolTip(
+            ViewModeToggleButton,
+            isCompact ? "Switch to Expanded view" : "Switch to Condensed view");
+
+        double scale = Math.Max(1.0, GetDpiForWindow(_hwnd) / 96.0);
+        int targetW = (int)Math.Round((isCompact ? CondensedWidthDip : ExpandedWidthDip) * scale);
+        int targetH = (int)Math.Round((isCompact ? CondensedHeightDip : ExpandedHeightDip) * scale);
+
+        var oldPos = AppWindow.Position;
+        var oldSize = AppWindow.Size;
+
+        AppWindow.Resize(new SizeInt32(targetW, targetH));
+
+        if (anchorBottomRight)
+        {
+            try
+            {
+                var displayArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+                var work = displayArea.WorkArea;
+                int newX = oldPos.X + (oldSize.Width - targetW);
+                int newY = oldPos.Y + (oldSize.Height - targetH);
+                newX = Math.Clamp(newX, work.X, Math.Max(work.X, work.X + work.Width - targetW));
+                newY = Math.Clamp(newY, work.Y, Math.Max(work.Y, work.Y + work.Height - targetH));
+                AppWindow.Move(new PointInt32(newX, newY));
+            }
+            catch { }
+        }
+    }
+
     private void RenderCurrentAlert()
     {
         if (_queue.Count == 0)
@@ -182,12 +233,19 @@ public sealed partial class ConnectionAlertWindow : Window
         QueueCounterText.Text = $"{_currentIndex + 1} of {_queue.Count}";
 
         // App & Trust details
-        AppNameText.Text = string.IsNullOrWhiteSpace(evt.ApplicationName) ? "Unknown Application" : evt.ApplicationName;
+        var appName = string.IsNullOrWhiteSpace(evt.ApplicationName) ? "Unknown Application" : evt.ApplicationName;
+        var publisher = string.IsNullOrWhiteSpace(evt.Publisher) ? "Unknown" : evt.Publisher;
+
+        AppNameText.Text = appName;
         AppPathText.Text = evt.ApplicationPath;
         ToolTipService.SetToolTip(AppPathText, evt.ApplicationPath);
-        PublisherText.Text = string.IsNullOrWhiteSpace(evt.Publisher)
-            ? "Publisher: Unknown"
-            : $"Publisher: {evt.Publisher}";
+        PublisherText.Text = $"Publisher: {publisher}";
+
+        CondensedAppNameText.Text = appName;
+        CondensedPublisherText.Text = publisher;
+        ToolTipService.SetToolTip(
+            CondensedAppInfoPanel,
+            string.IsNullOrWhiteSpace(evt.ApplicationPath) ? appName : $"{appName}\n{publisher}\n{evt.ApplicationPath}");
 
         // App icon (cached synchronously when available, otherwise loaded asynchronously)
         if (AppIconHelper.TryGetCachedIcon(evt.ApplicationPath, out var cachedIcon))
@@ -203,28 +261,16 @@ public sealed partial class ConnectionAlertWindow : Window
         switch (evt.SignatureStatus)
         {
             case SignatureTrustStatus.Trusted:
-                TrustBadgeText.Text = "Trusted";
-                TrustBadgeIcon.Glyph = "\uE73E";
-                TrustBadgeIcon.Foreground = new SolidColorBrush(Color.FromArgb(255, 16, 185, 129));
-                TrustBadgeText.Foreground = new SolidColorBrush(Color.FromArgb(255, 16, 185, 129));
+                ApplyTrustBadge("Trusted", "\uE73E", Color.FromArgb(255, 16, 185, 129));
                 break;
             case SignatureTrustStatus.Unsigned:
-                TrustBadgeText.Text = "Unsigned";
-                TrustBadgeIcon.Glyph = "\uE7BA";
-                TrustBadgeIcon.Foreground = new SolidColorBrush(Color.FromArgb(255, 245, 158, 11));
-                TrustBadgeText.Foreground = new SolidColorBrush(Color.FromArgb(255, 245, 158, 11));
+                ApplyTrustBadge("Unsigned", "\uE7BA", Color.FromArgb(255, 245, 158, 11));
                 break;
             case SignatureTrustStatus.Untrusted:
-                TrustBadgeText.Text = "Untrusted";
-                TrustBadgeIcon.Glyph = "\uEA39";
-                TrustBadgeIcon.Foreground = new SolidColorBrush(Color.FromArgb(255, 239, 68, 68));
-                TrustBadgeText.Foreground = new SolidColorBrush(Color.FromArgb(255, 239, 68, 68));
+                ApplyTrustBadge("Untrusted", "\uEA39", Color.FromArgb(255, 239, 68, 68));
                 break;
             default:
-                TrustBadgeText.Text = "Unknown";
-                TrustBadgeIcon.Glyph = "\uE946";
-                TrustBadgeIcon.Foreground = new SolidColorBrush(Colors.Gray);
-                TrustBadgeText.Foreground = new SolidColorBrush(Colors.Gray);
+                ApplyTrustBadge("Unknown", "\uE946", Colors.Gray);
                 break;
         }
 
@@ -242,6 +288,9 @@ public sealed partial class ConnectionAlertWindow : Window
         // Default temp button text
         int defaultMins = FirewallBackendService.Instance.GetSettings().DefaultTempRuleMinutes;
         TempAllowButton.Content = $"Allow ({defaultMins}m)";
+        ToolTipService.SetToolTip(
+            CondensedTempAllowButton,
+            $"Allow for {defaultMins} minutes (right-click for other durations)");
 
         // Async Reverse DNS + GeoIP resolution
         var cfg = FirewallBackendService.Instance.GetSettings();
@@ -262,6 +311,19 @@ public sealed partial class ConnectionAlertWindow : Window
         }
     }
 
+    private void ApplyTrustBadge(string label, string glyph, Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        TrustBadgeText.Text = label;
+        TrustBadgeIcon.Glyph = glyph;
+        TrustBadgeIcon.Foreground = brush;
+        TrustBadgeText.Foreground = brush;
+
+        CondensedTrustIcon.Glyph = glyph;
+        CondensedTrustIcon.Foreground = brush;
+        ToolTipService.SetToolTip(CondensedTrustIcon, label);
+    }
+
     private void ApplyAppIcon(ImageSource? icon)
     {
         if (icon is not null)
@@ -269,12 +331,20 @@ public sealed partial class ConnectionAlertWindow : Window
             AppIconImage.Source = icon;
             AppIconImage.Visibility = Visibility.Visible;
             AppIconFallback.Visibility = Visibility.Collapsed;
+
+            CondensedAppIconImage.Source = icon;
+            CondensedAppIconImage.Visibility = Visibility.Visible;
+            CondensedAppIconFallback.Visibility = Visibility.Collapsed;
         }
         else
         {
             AppIconImage.Source = null;
             AppIconImage.Visibility = Visibility.Collapsed;
             AppIconFallback.Visibility = Visibility.Visible;
+
+            CondensedAppIconImage.Source = null;
+            CondensedAppIconImage.Visibility = Visibility.Collapsed;
+            CondensedAppIconFallback.Visibility = Visibility.Visible;
         }
     }
 
@@ -421,6 +491,21 @@ public sealed partial class ConnectionAlertWindow : Window
     {
         int mins = FirewallBackendService.Instance.GetSettings().DefaultTempRuleMinutes;
         await ApplyActionAndAdvanceAsync(RuleAction.Allow, mins);
+    }
+
+    private async void AllowTempCondensed_Click(object sender, RoutedEventArgs e)
+    {
+        int mins = FirewallBackendService.Instance.GetSettings().DefaultTempRuleMinutes;
+        await ApplyActionAndAdvanceAsync(RuleAction.Allow, mins);
+    }
+
+    private void ToggleViewMode_Click(object sender, RoutedEventArgs e)
+    {
+        bool nextCompact = !_isCompactView;
+        var cfg = FirewallBackendService.Instance.GetSettings();
+        cfg.CompactAlertView = nextCompact;
+        FirewallBackendService.Instance.SaveSettings(cfg);
+        ApplyViewMode(nextCompact, anchorBottomRight: true);
     }
 
     private async void AllowTempMenu_Click(object sender, RoutedEventArgs e)

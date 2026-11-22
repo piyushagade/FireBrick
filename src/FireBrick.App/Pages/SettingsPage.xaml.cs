@@ -36,6 +36,8 @@ public sealed partial class SettingsPage : Page
                 }
             }
 
+            AlertViewCombo.SelectedIndex = cfg.CompactAlertView ? 1 : 0;
+
             ReverseDnsToggle.IsOn = cfg.EnableReverseDns;
             GeoIpToggle.IsOn = cfg.EnableGeoIpLookup;
             KillOnBlockToggle.IsOn = cfg.KillConnectionsOnBlock;
@@ -85,6 +87,15 @@ public sealed partial class SettingsPage : Page
                 _ => ElementTheme.Default
             };
         }
+    }
+
+    private void AlertViewCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        var tag = (AlertViewCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Expanded";
+        var cfg = FirewallBackendService.Instance.GetSettings();
+        cfg.CompactAlertView = string.Equals(tag, "Condensed", StringComparison.OrdinalIgnoreCase);
+        FirewallBackendService.Instance.SaveSettings(cfg);
     }
 
     private void ReverseDnsToggle_Toggled(object sender, RoutedEventArgs e)

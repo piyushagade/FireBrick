@@ -18,10 +18,11 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <FontIcon Grid.Column="0" Glyph="&#xEA18;" FontSize="16" Foreground="{StaticResource FireBrickAccentBrush}" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="Blocked Outbound Connection" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+            <TextBlock x:Name="HeaderTitleText" Grid.Column="1" Text="Blocked Outbound Connection" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
 
             <!-- Queue Pager (visible when >1 alerts queued) -->
             <StackPanel x:Name="QueuePagerPanel" Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Visibility="Collapsed">
@@ -33,10 +34,65 @@
                     <FontIcon Glyph="&#xE76C;" FontSize="10" />
                 </Button>
             </StackPanel>
+
+            <!-- Toggle Expanded / Condensed View -->
+            <Button x:Name="ViewModeToggleButton" Grid.Column="3" Padding="6,3" Background="Transparent" BorderThickness="0" VerticalAlignment="Center" Click="ToggleViewMode_Click" ToolTipService.ToolTip="Switch to Condensed view">
+                <FontIcon x:Name="ViewModeToggleIcon" Glyph="&#xE70E;" FontSize="11" />
+            </Button>
         </Grid>
 
-        <!-- Alert Content -->
-        <StackPanel Grid.Row="1" Padding="16,0,16,0" Spacing="10">
+        <!-- Condensed Alert Content -->
+        <Grid x:Name="CondensedContentPanel" Grid.Row="1" Padding="12,0,12,10" ColumnSpacing="10" Visibility="Collapsed" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0" Width="24" Height="24" VerticalAlignment="Center">
+                <Image x:Name="CondensedAppIconImage" Width="22" Height="22" Stretch="Uniform" Visibility="Collapsed" />
+                <FontIcon x:Name="CondensedAppIconFallback" Glyph="&#xECAA;" FontSize="18" Opacity="0.7" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            </Grid>
+
+            <StackPanel x:Name="CondensedAppInfoPanel" Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                <Grid ColumnSpacing="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="CondensedAppNameText" Grid.Column="0" Text="application.exe" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="158" VerticalAlignment="Center" />
+                    <FontIcon x:Name="CondensedTrustIcon" Grid.Column="1" Glyph="&#xE73E;" FontSize="11" VerticalAlignment="Center" />
+                </Grid>
+                <TextBlock x:Name="CondensedPublisherText" Text="Unknown" FontSize="11" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <!-- Icon-Only Action Buttons -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <Button Padding="8,7" Style="{ThemeResource AccentButtonStyle}" Click="AllowPermanent_Click" ToolTipService.ToolTip="Allow permanently">
+                    <FontIcon Glyph="&#xE73E;" FontSize="13" />
+                </Button>
+                <Button x:Name="CondensedTempAllowButton" Padding="8,7" Click="AllowTempCondensed_Click" ToolTipService.ToolTip="Allow temporarily (right-click for durations)">
+                    <Button.ContextFlyout>
+                        <MenuFlyout Placement="TopEdgeAlignedLeft">
+                            <MenuFlyoutItem Text="Allow for 5 minutes" Tag="5" Click="AllowTempMenu_Click" />
+                            <MenuFlyoutItem Text="Allow for 15 minutes" Tag="15" Click="AllowTempMenu_Click" />
+                            <MenuFlyoutItem Text="Allow for 1 hour" Tag="60" Click="AllowTempMenu_Click" />
+                            <MenuFlyoutItem Text="Allow for 4 hours" Tag="240" Click="AllowTempMenu_Click" />
+                        </MenuFlyout>
+                    </Button.ContextFlyout>
+                    <FontIcon Glyph="&#xE916;" FontSize="13" />
+                </Button>
+                <Button Padding="8,7" Click="BlockPermanent_Click" ToolTipService.ToolTip="Block permanently">
+                    <FontIcon Glyph="&#xF140;" FontSize="13" Foreground="#EF4444" />
+                </Button>
+                <Button Padding="8,7" Click="IgnoreOnce_Click" ToolTipService.ToolTip="Ignore once (dismiss without creating a rule)">
+                    <FontIcon Glyph="&#xE711;" FontSize="12" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Expanded Alert Content -->
+        <StackPanel x:Name="ExpandedContentPanel" Grid.Row="1" Padding="16,0,16,0" Spacing="10">
 
             <!-- Application & Trust Card -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
@@ -118,7 +174,7 @@
         </StackPanel>
 
         <!-- Action Footer -->
-        <Border Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+        <Border x:Name="ExpandedFooterBorder" Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="16,12">
             <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
