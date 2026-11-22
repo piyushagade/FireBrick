@@ -88,6 +88,22 @@ public sealed partial class DashboardPage : Page
             AuditDot.Fill = status.IsAuditPolicyEnabled ? onBrush : warnBrush;
             AuditPillText.Text = $"WFP Auditing: {(status.IsAuditPolicyEnabled ? "Enabled" : "Off")}";
 
+            if (status.IsServiceConnected)
+            {
+                ServiceStatusDot.Fill = onBrush;
+                ServiceStatusText.Text = "Service Connected";
+            }
+            else if (status.IsElevated)
+            {
+                ServiceStatusDot.Fill = onBrush;
+                ServiceStatusText.Text = "Administrator Mode";
+            }
+            else
+            {
+                ServiceStatusDot.Fill = warnBrush;
+                ServiceStatusText.Text = "Read-Only";
+            }
+
             HighProfileRadio.IsChecked = status.ProfileMode == FirewallProfileMode.HighFiltering;
             MediumProfileRadio.IsChecked = status.ProfileMode == FirewallProfileMode.MediumFiltering;
             LowProfileRadio.IsChecked = status.ProfileMode == FirewallProfileMode.LowFiltering;
@@ -111,7 +127,11 @@ public sealed partial class DashboardPage : Page
                         ? "A newer FireBrickService binary is bundled with this build. Click to update and restart the background service."
                         : "FireBrickService is installed but currently stopped. Click to start it.";
 
-                var actionBtn = new Button { Content = label };
+                var actionBtn = new Button
+                {
+                    Content = label,
+                    HorizontalAlignment = HorizontalAlignment.Right
+                };
                 actionBtn.Click += async (_, _) =>
                 {
                     actionBtn.IsEnabled = false;
@@ -131,7 +151,12 @@ public sealed partial class DashboardPage : Page
                     }
                 };
 
-                ShowBanner(InfoBarSeverity.Informational, "Background Service Action Available", desc, actionBtn);
+                string bannerTitle = svcHealth.NeedsInstall
+                    ? "Background Service Not Installed"
+                    : svcHealth.NeedsStart
+                        ? "Background Service Stopped"
+                        : "Background Service Update Available";
+                ShowBanner(InfoBarSeverity.Warning, bannerTitle, desc, actionBtn);
             }
             else if (!canWrite)
             {

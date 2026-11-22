@@ -19,6 +19,12 @@
                     <TextBlock Text="Manage Windows Defender Firewall profiles, notification modes, and live telemetry." Opacity="0.7" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Border CornerRadius="12" Padding="10,5" VerticalAlignment="Center" Background="{StaticResource FireBrickMutedBadgeBg}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Ellipse x:Name="ServiceStatusDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                            <TextBlock x:Name="ServiceStatusText" Text="Checking..." FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
                     <Button x:Name="ElevateButton" Content="Run as Administrator" Visibility="Collapsed" Click="ElevateButton_Click" />
                     <Button Content="Refresh" Click="RefreshButton_Click" />
                 </StackPanel>
@@ -85,7 +91,7 @@
                     <Border Grid.Row="0" Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                         <RadioButton x:Name="HighProfileRadio" GroupName="FirewallProfiles" Tag="HighFiltering" Checked="ProfileRadio_Checked">
                             <StackPanel Spacing="4" Margin="4,0,0,0">
-                                <TextBlock Text="High Filtering (Lockdown)" FontWeight="SemiBold" Foreground="{StaticResource FireBrickBlockBrush}" />
+                                <TextBlock Text="High Filtering (Lockdown)" FontWeight="SemiBold" Foreground="#3B82F6" />
                                 <TextBlock Text="Blocks all outbound and inbound connections regardless of rules. Use in emergencies." TextWrapping="Wrap" FontSize="12" Opacity="0.75" />
                             </StackPanel>
                         </RadioButton>
@@ -94,7 +100,7 @@
                     <Border Grid.Row="0" Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                         <RadioButton x:Name="MediumProfileRadio" GroupName="FirewallProfiles" Tag="MediumFiltering" Checked="ProfileRadio_Checked">
                             <StackPanel Spacing="4" Margin="4,0,0,0">
-                                <TextBlock Text="Medium Filtering (Recommended)" FontWeight="SemiBold" Foreground="{StaticResource FireBrickAccentBrush}" />
+                                <TextBlock Text="Medium Filtering (Recommended)" FontWeight="SemiBold" Foreground="#22C55E" />
                                 <TextBlock Text="Blocks outbound connections that do not match an Allow rule. Only approved programs can connect." TextWrapping="Wrap" FontSize="12" Opacity="0.75" />
                             </StackPanel>
                         </RadioButton>
@@ -103,7 +109,7 @@
                     <Border Grid.Row="1" Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                         <RadioButton x:Name="LowProfileRadio" GroupName="FirewallProfiles" Tag="LowFiltering" Checked="ProfileRadio_Checked">
                             <StackPanel Spacing="4" Margin="4,0,0,0">
-                                <TextBlock Text="Low Filtering (Windows Default)" FontWeight="SemiBold" Foreground="{StaticResource FireBrickAllowBrush}" />
+                                <TextBlock Text="Low Filtering (Windows Default)" FontWeight="SemiBold" Foreground="#F59E0B" />
                                 <TextBlock Text="Allows outbound connections unless an explicit Block rule matches. Inbound blocked by default." TextWrapping="Wrap" FontSize="12" Opacity="0.75" />
                             </StackPanel>
                         </RadioButton>
@@ -112,7 +118,7 @@
                     <Border Grid.Row="1" Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                         <RadioButton x:Name="NoProfileRadio" GroupName="FirewallProfiles" Tag="NoFiltering" Checked="ProfileRadio_Checked">
                             <StackPanel Spacing="4" Margin="4,0,0,0">
-                                <TextBlock Text="No Filtering (Disabled)" FontWeight="SemiBold" Opacity="0.85" />
+                                <TextBlock Text="No Filtering (Disabled)" FontWeight="SemiBold" Foreground="#EF4444" />
                                 <TextBlock Text="Turns off Windows Defender Firewall across Domain, Private, and Public profiles." TextWrapping="Wrap" FontSize="12" Opacity="0.75" />
                             </StackPanel>
                         </RadioButton>

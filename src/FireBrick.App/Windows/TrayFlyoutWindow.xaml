@@ -19,7 +19,7 @@
         </Grid.Resources>
 
         <!-- MAIN MENU VIEW -->
-        <StackPanel x:Name="MainView" Spacing="2">
+        <StackPanel x:Name="MainView" Spacing="2" VerticalAlignment="Top">
             <!-- Header -->
             <Grid Padding="10,6,10,8" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
@@ -49,7 +49,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#E81123" VerticalAlignment="Center" />
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#3B82F6" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="High Filtering (Lockdown)" VerticalAlignment="Center" />
                     <FontIcon x:Name="CheckHigh" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
                 </Grid>
@@ -62,7 +62,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#F59E0B" VerticalAlignment="Center" />
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#22C55E" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="Medium Filtering" VerticalAlignment="Center" />
                     <FontIcon x:Name="CheckMedium" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
                 </Grid>
@@ -75,7 +75,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#10B981" VerticalAlignment="Center" />
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#F59E0B" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="Low Filtering (Default)" VerticalAlignment="Center" />
                     <FontIcon x:Name="CheckLow" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
                 </Grid>
@@ -88,7 +88,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#888E96" VerticalAlignment="Center" />
+                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="#EF4444" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="No Filtering (Disabled)" VerticalAlignment="Center" />
                     <FontIcon x:Name="CheckNone" Grid.Column="2" Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="Collapsed" />
                 </Grid>
@@ -144,7 +144,7 @@
         </StackPanel>
 
         <!-- NOTIFICATIONS SUBMENU VIEW -->
-        <StackPanel x:Name="NotifSubmenuView" Spacing="2" Visibility="Collapsed">
+        <StackPanel x:Name="NotifSubmenuView" Spacing="2" VerticalAlignment="Top" Visibility="Collapsed">
             <Button Style="{StaticResource TrayMenuItemStyle}" Click="BackToMain_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE72B;" FontSize="12" Opacity="0.8" />
@@ -211,7 +211,7 @@
         </StackPanel>
 
         <!-- GO TO SUBMENU VIEW -->
-        <StackPanel x:Name="NavSubmenuView" Spacing="2" Visibility="Collapsed">
+        <StackPanel x:Name="NavSubmenuView" Spacing="2" VerticalAlignment="Top" Visibility="Collapsed">
             <Button Style="{StaticResource TrayMenuItemStyle}" Click="BackToMain_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE72B;" FontSize="12" Opacity="0.8" />

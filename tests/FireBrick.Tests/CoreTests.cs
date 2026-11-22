@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using FireBrick.Core.Engine;
 using FireBrick.Core.Ipc;
 using FireBrick.Core.Models;
@@ -192,5 +194,166 @@ public class CoreTests
         var buckets = AppAggregator.BuildActivityBuckets(events);
         Assert.Equal(12, buckets.Count);
         Assert.True(buckets.Sum(b => b.BlockedCount) >= 2);
+    }
+
+    [Fact]
+    public void AppSettingsDto_DefaultsSendDiagnosticsAndUsageToTrue()
+    {
+        var settings = new AppSettingsDto();
+        Assert.True(settings.SendDiagnosticsAndUsage);
+    }
+
+    [Fact]
+    public async Task UsageAnalyticsService_RespectsOptOutAndSendsExpectedPostUrls()
+    {
+        var calls = new List<(HttpMethod Method, string Url)>();
+        var handler = new StubHttpHandler(req =>
+        {
+            calls.Add((req.Method, req.RequestUri!.ToString()));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"namespace":"firebrick","key":"test","count":1}""")
+            };
+        });
+
+        bool enabled = false;
+        var statePath = Path.Combine(Path.GetTempPath(), $"firebrick_analytics_{Guid.NewGuid():N}.json");
+        try
+        {
+            using var svc = new UsageAnalyticsService(
+                isEnabled: () => enabled,
+                statePath: statePath,
+                crashLogPath: Path.Combine(Path.GetTempPath(), $"nonexistent_{Guid.NewGuid():N}.log"),
+                httpHandler: handler);
+
+            Assert.False(await svc.IncrementAsync("app-launches"));
+            Assert.Empty(calls);
+
+            enabled = true;
+            Assert.True(await svc.IncrementAsync("app-launches"));
+            Assert.Single(calls);
+            Assert.Equal(HttpMethod.Post, calls[0].Method);
+            Assert.Equal("https://app.piyushagade.xyz/counter/firebrick/app-launches/up", calls[0].Url);
+        }
+        finally
+        {
+            if (File.Exists(statePath)) File.Delete(statePath);
+        }
+    }
+
+    [Fact]
+    public async Task UsageAnalyticsService_DeduplicatesDailyPingAndFirstRunAndTracksCrashGrowth()
+    {
+        var keys = new List<string>();
+        var handler = new StubHttpHandler(req =>
+        {
+            var segments = req.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            // .../counter/firebrick/<key>/up
+            keys.Add(segments[^2]);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var now = new DateTimeOffset(2026, 11, 22, 14, 0, 0, TimeSpan.Zero);
+        var statePath = Path.Combine(Path.GetTempPath(), $"firebrick_analytics_{Guid.NewGuid():N}.json");
+        var crashPath = Path.Combine(Path.GetTempPath(), $"firebrick_crash_{Guid.NewGuid():N}.log");
+        try
+        {
+            File.WriteAllText(crashPath, "crash 1\n");
+
+            using var svc = new UsageAnalyticsService(
+                isEnabled: () => true,
+                statePath: statePath,
+                crashLogPath: crashPath,
+                httpHandler: handler,
+                utcNow: () => now);
+
+            await svc.TrackAppLaunchAsync(FirewallProfileMode.MediumFiltering, isServiceConnected: true, appVersion: "1.1.0");
+            Assert.Contains("app-launches", keys);
+            Assert.Contains("first-run", keys);
+            Assert.Contains("crash-count", keys);
+            Assert.Contains("dau-2026-11-22", keys);
+            Assert.Contains("dau-total", keys);
+            Assert.Contains("version-1_1_0", keys);
+            Assert.Contains("profile-medium", keys);
+            Assert.Contains("service-connected", keys);
+
+            // Second launch on the same UTC day should not re-send first-run, crash-count, or dau-2026-11-22
+            keys.Clear();
+            await svc.TrackAppLaunchAsync(FirewallProfileMode.MediumFiltering, isServiceConnected: true, appVersion: "1.1.0");
+            Assert.Contains("app-launches", keys);
+            Assert.DoesNotContain("first-run", keys);
+            Assert.DoesNotContain("crash-count", keys);
+            Assert.DoesNotContain("dau-2026-11-22", keys);
+
+            // Next UTC day + new crash entry should fire new DAU and crash-count
+            keys.Clear();
+            now = now.AddDays(1);
+            File.AppendAllText(crashPath, "crash 2\n");
+            await svc.TrackAppLaunchAsync(FirewallProfileMode.HighFiltering, isServiceConnected: false, appVersion: "1.1.0");
+            Assert.Contains("dau-2026-11-23", keys);
+            Assert.Contains("profile-high", keys);
+            Assert.Contains("crash-count", keys);
+            Assert.DoesNotContain("first-run", keys);
+        }
+        finally
+        {
+            if (File.Exists(statePath)) File.Delete(statePath);
+            if (File.Exists(crashPath)) File.Delete(crashPath);
+        }
+    }
+
+    [Fact]
+    public async Task UsageAnalyticsService_CircuitBreakerGuardsOutagesAndRecoversAfterCooldown()
+    {
+        int httpCalls = 0;
+        bool shouldFail = true;
+        var handler = new StubHttpHandler(_ =>
+        {
+            httpCalls++;
+            if (shouldFail)
+                throw new HttpRequestException("Counter API unavailable");
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var now = new DateTimeOffset(2026, 11, 22, 14, 0, 0, TimeSpan.Zero);
+        var statePath = Path.Combine(Path.GetTempPath(), $"firebrick_analytics_{Guid.NewGuid():N}.json");
+        try
+        {
+            using var svc = new UsageAnalyticsService(
+                isEnabled: () => true,
+                statePath: statePath,
+                crashLogPath: Path.Combine(Path.GetTempPath(), $"nonexistent_{Guid.NewGuid():N}.log"),
+                httpHandler: handler,
+                utcNow: () => now);
+
+            // Two consecutive failures open the circuit
+            Assert.False(await svc.IncrementAsync("interceptions-total"));
+            Assert.False(svc.IsCircuitOpen);
+            Assert.False(await svc.IncrementAsync("interceptions-total"));
+            Assert.True(svc.IsCircuitOpen);
+            Assert.Equal(2, httpCalls);
+
+            // Subsequent calls during cooldown are skipped with zero network traffic
+            Assert.False(await svc.IncrementAsync("interceptions-total"));
+            Assert.Equal(2, httpCalls);
+
+            // Advance past 15-minute cooldown and restore API -> circuit closes
+            now = now.AddMinutes(16);
+            shouldFail = false;
+            Assert.True(await svc.IncrementAsync("interceptions-total"));
+            Assert.False(svc.IsCircuitOpen);
+            Assert.Equal(0, svc.ConsecutiveFailures);
+            Assert.Equal(3, httpCalls);
+        }
+        finally
+        {
+            if (File.Exists(statePath)) File.Delete(statePath);
+        }
+    }
+
+    private sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(responder(request));
     }
 }

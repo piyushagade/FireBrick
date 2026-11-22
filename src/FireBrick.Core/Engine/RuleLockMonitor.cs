@@ -74,6 +74,14 @@ public sealed class RuleLockMonitor
                 if (_knownRuleNames.Contains(rule.Name))
                     continue;
 
+                // Never flag FireBrick's own managed lockdown/system rules as unauthorized injections
+                if (rule.Name.Equals("FireBrick: High Filtering Outbound Block", StringComparison.OrdinalIgnoreCase) ||
+                    rule.Grouping.Equals("FireBrick System", StringComparison.OrdinalIgnoreCase))
+                {
+                    _knownRuleNames.Add(rule.Name);
+                    continue;
+                }
+
                 // Unauthorized external rule detected — attempt to revert it
                 bool reverted = false;
                 try

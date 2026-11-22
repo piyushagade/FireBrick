@@ -348,6 +348,7 @@ public sealed partial class ConnectionAlertWindow : Window
         {
             var rule = BuildScopedRule(evt, action, tempMinutes);
             await FirewallBackendService.Instance.CreateRuleAsync(rule);
+            FirewallBackendService.Instance.Analytics.TrackAlertDecision(action, rule.IsTemporary);
             if (action == RuleAction.Block && FirewallBackendService.Instance.GetSettings().KillConnectionsOnBlock)
             {
                 await FirewallBackendService.Instance.KillConnectionsForAppAsync(evt.ApplicationPath);

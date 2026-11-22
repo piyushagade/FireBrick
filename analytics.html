@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FireBrick — Usage Analytics Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #1c222b;
+      --border: #2a313c;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #ef4444;
+      --amber: #f59e0b;
+      --green: #10b981;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+      --gray: #6b7280;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 28px 24px 48px;
+      line-height: 1.45;
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .shield {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 6px 11px;
+      border-radius: 999px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .dot.loading { background: var(--amber); animation: pulse 1s infinite; }
+    .dot.error { background: var(--accent); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    select, button, input[type="text"] {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover { background: var(--surface-2); border-color: #3d4654; }
+
+    button.primary {
+      background: #dc2626;
+      border-color: #dc2626;
+      color: #fff;
+    }
+
+    button.primary:hover { background: #b91c1c; border-color: #b91c1c; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .kpi-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 600;
+    }
+
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-top: 6px;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .kpi-link {
+      color: inherit;
+      text-decoration: none;
+    }
+    .kpi-link:hover { text-decoration: underline; }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 170px;
+      padding-top: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .bar-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+
+    .bar-val {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bar {
+      width: 100%;
+      max-width: 34px;
+      border-radius: 5px 5px 0 0;
+      min-height: 3px;
+      transition: height 0.3s ease;
+    }
+
+    .bar-label {
+      font-size: 10.5px;
+      color: var(--muted);
+      margin-top: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .breakdown-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .breakdown-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .breakdown-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+
+    .breakdown-head .count {
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+    }
+
+    .track {
+      height: 8px;
+      background: var(--surface-2);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.35s ease;
+    }
+
+    .versions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .chip {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chip strong {
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .chip span { color: var(--muted); }
+
+    footer {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="shield">🔥</div>
+        <div>
+          <h1>FireBrick Usage Analytics</h1>
+          <div class="subtitle">Live anonymous counters from <code>app.piyushagade.xyz/counter/firebrick</code></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <span class="status-pill" id="statusPill">
+          <span class="dot loading" id="statusDot"></span>
+          <span id="statusText">Loading…</span>
+        </span>
+        <select id="rangeSelect" title="Daily chart window">
+          <option value="7" selected>Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+        <label class="status-pill" style="cursor:pointer;">
+          <input type="checkbox" id="autoRefresh" checked style="accent-color:#ef4444;" />
+          Auto-refresh (60s)
+        </label>
+        <button class="primary" id="refreshBtn">Refresh</button>
+      </div>
+    </header>
+
+    <!-- Top KPIs -->
+    <section class="kpi-grid">
+      <div class="card">
+        <div class="kpi-label">Today's DAU (UTC)</div>
+        <div class="kpi-value" id="kpiDauToday" style="color: var(--blue);">—</div>
+        <div class="kpi-sub">All-time active days: <strong id="kpiDauTotal">—</strong></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">First-Run Installs</div>
+        <div class="kpi-value" id="kpiFirstRun" style="color: var(--green);">—</div>
+        <div class="kpi-sub"><a class="kpi-link" href="https://app.piyushagade.xyz/counter/firebrick/first-run" target="_blank">counter/first-run</a></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Total App Launches</div>
+        <div class="kpi-value" id="kpiLaunches">—</div>
+        <div class="kpi-sub"><a class="kpi-link" href="https://app.piyushagade.xyz/counter/firebrick/app-launches" target="_blank">counter/app-launches</a></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Total Interceptions</div>
+        <div class="kpi-value" id="kpiInterceptions" style="color: var(--amber);">—</div>
+        <div class="kpi-sub">Today (UTC): <strong id="kpiInterceptionsToday">—</strong></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Crash Reports</div>
+        <div class="kpi-value" id="kpiCrashes" style="color: var(--accent);">—</div>
+        <div class="kpi-sub"><a class="kpi-link" href="https://app.piyushagade.xyz/counter/firebrick/crash-count" target="_blank">counter/crash-count</a></div>
+      </div>
+    </section>
+
+    <!-- Daily Charts -->
+    <section class="two-col">
+      <div class="card">
+        <div class="section-title">
+          <span>Daily Active Usage (DAU)</span>
+          <span style="font-size:12px;color:var(--muted);" id="dauChartSum"></span>
+        </div>
+        <div class="section-sub">Unique installs active per UTC day (<code>dau-YYYY-MM-DD</code>)</div>
+        <div class="chart" id="dauChart"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <span>Daily Interceptions</span>
+          <span style="font-size:12px;color:var(--muted);" id="intChartSum"></span>
+        </div>
+        <div class="section-sub">Blocked connection prompts per UTC day (<code>interceptions-YYYY-MM-DD</code>)</div>
+        <div class="chart" id="intChart"></div>
+      </div>
+    </section>
+
+    <!-- Breakdowns -->
+    <section class="two-col">
+      <div class="card">
+        <div class="section-title">Filtering Profile Distribution</div>
+        <div class="section-sub">Sampled once daily alongside DAU</div>
+        <div class="breakdown-list" id="profileBreakdown"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Alert Decisions</div>
+        <div class="section-sub">User responses in the Connection Alert popup</div>
+        <div class="breakdown-list" id="alertBreakdown"></div>
+      </div>
+    </section>
+
+    <!-- Features & Versions -->
+    <section class="card">
+      <div class="section-title">
+        <span>Features &amp; Versions</span>
+        <form id="addVersionForm" style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="versionInput" placeholder="Add version (e.g. 1.2.0)" style="width:170px;" />
+          <button type="submit">Track</button>
+        </form>
+      </div>
+      <div class="section-sub">Daily service health, preset usage, and active version distribution</div>
+      <div class="versions-row" id="featureChips"></div>
+    </section>
+
+    <footer>
+      UTC Date: <span id="utcTodayLabel"></span> &nbsp;•&nbsp; Last updated: <span id="lastUpdated">—</span>
+    </footer>
+  </div>
+
+  <script>
+    const BASE = "https://app.piyushagade.xyz/counter/firebrick";
+    const trackedVersions = new Set(["1.1.0"]);
+    let refreshTimer = null;
+
+    function utcDateString(daysAgo = 0) {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - daysAgo);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function shortLabel(isoDate) {
+      return isoDate.slice(5); // MM-DD
+    }
+
+    function fmt(n) {
+      return typeof n === "number" ? n.toLocaleString() : "—";
+    }
+
+    async function fetchCount(key) {
+      try {
+        const res = await fetch(`${BASE}/${encodeURIComponent(key)}`, { cache: "no-store" });
+        if (!res.ok) return { ok: false, count: 0 };
+        const data = await res.json();
+        return { ok: true, count: Number(data.count ?? 0) };
+      } catch {
+        return { ok: false, count: 0 };
+      }
+    }
+
+    function renderBarChart(containerId, sumId, items, color) {
+      const el = document.getElementById(containerId);
+      const max = Math.max(1, ...items.map(i => i.count));
+      const total = items.reduce((acc, i) => acc + i.count, 0);
+      document.getElementById(sumId).textContent = `Window total: ${fmt(total)}`;
+
+      el.innerHTML = items.map(item => {
+        const pct = Math.round((item.count / max) * 100);
+        const height = item.count === 0 ? 3 : Math.max(8, pct);
+        return `
+          <div class="bar-col" title="${item.date}: ${item.count}">
+            <div class="bar-val">${item.count > 0 ? item.count : ""}</div>
+            <div class="bar" style="height:${height}%;background:${item.count > 0 ? color : "#2a313c"};"></div>
+            <div class="bar-label">${shortLabel(item.date)}</div>
+          </div>`;
+      }).join("");
+    }
+
+    function renderBreakdown(containerId, rows) {
+      const el = document.getElementById(containerId);
+      const total = rows.reduce((s, r) => s + r.count, 0);
+
+      el.innerHTML = rows.map(r => {
+        const pct = total > 0 ? Math.round((r.count / total) * 100) : 0;
+        return `
+          <div class="breakdown-row">
+            <div class="breakdown-head">
+              <span>${r.label}</span>
+              <span class="count"><strong>${fmt(r.count)}</strong> (${pct}%)</span>
+            </div>
+            <div class="track">
+              <div class="fill" style="width:${pct}%;background:${r.color};"></div>
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    async function loadDashboard() {
+      const dot = document.getElementById("statusDot");
+      const statusText = document.getElementById("statusText");
+      dot.className = "dot loading";
+      statusText.textContent = "Refreshing…";
+
+      const days = Number(document.getElementById("rangeSelect").value) || 7;
+      const today = utcDateString(0);
+      document.getElementById("utcTodayLabel").textContent = today;
+
+      const dates = [];
+      for (let i = days - 1; i >= 0; i--) dates.push(utcDateString(i));
+
+      const staticKeys = [
+        "app-launches",
+        "first-run",
+        "dau-total",
+        "interceptions-total",
+        "crash-count",
+        "alert-allow",
+        "alert-temp-allow",
+        "alert-block",
+        "profile-high",
+        "profile-medium",
+        "profile-low",
+        "profile-none",
+        "service-connected",
+        "preset-applied"
+      ];
+
+      const versionList = Array.from(trackedVersions);
+      const versionKeys = versionList.map(v => `version-${v.replace(/\./g, "_")}`);
+      const dauKeys = dates.map(d => `dau-${d}`);
+      const intKeys = dates.map(d => `interceptions-${d}`);
+
+      const allKeys = [...staticKeys, ...versionKeys, ...dauKeys, ...intKeys];
+      const results = await Promise.all(allKeys.map(async k => [k, await fetchCount(k)]));
+      const map = Object.fromEntries(results);
+
+      const anyOk = results.some(([, r]) => r.ok);
+      const allOk = results.every(([, r]) => r.ok);
+
+      if (!anyOk) {
+        dot.className = "dot error";
+        statusText.textContent = "Counter API unreachable";
+      } else if (!allOk) {
+        dot.className = "dot loading";
+        statusText.textContent = "Partial data loaded";
+      } else {
+        dot.className = "dot";
+        statusText.textContent = "Live";
+      }
+
+      // KPIs
+      document.getElementById("kpiDauToday").textContent = fmt(map[`dau-${today}`].count);
+      document.getElementById("kpiDauTotal").textContent = fmt(map["dau-total"].count);
+      document.getElementById("kpiFirstRun").textContent = fmt(map["first-run"].count);
+      document.getElementById("kpiLaunches").textContent = fmt(map["app-launches"].count);
+      document.getElementById("kpiInterceptions").textContent = fmt(map["interceptions-total"].count);
+      document.getElementById("kpiInterceptionsToday").textContent = fmt(map[`interceptions-${today}`].count);
+      document.getElementById("kpiCrashes").textContent = fmt(map["crash-count"].count);
+
+      // Daily charts
+      renderBarChart(
+        "dauChart",
+        "dauChartSum",
+        dates.map(d => ({ date: d, count: map[`dau-${d}`].count })),
+        "var(--blue)"
+      );
+      renderBarChart(
+        "intChart",
+        "intChartSum",
+        dates.map(d => ({ date: d, count: map[`interceptions-${d}`].count })),
+        "var(--amber)"
+      );
+
+      // Breakdowns
+      renderBreakdown("profileBreakdown", [
+        { label: "High Filtering (Lockdown)", count: map["profile-high"].count, color: "var(--accent)" },
+        { label: "Medium Filtering (Recommended)", count: map["profile-medium"].count, color: "var(--amber)" },
+        { label: "Low Filtering (Default)", count: map["profile-low"].count, color: "var(--green)" },
+        { label: "No Filtering", count: map["profile-none"].count, color: "var(--gray)" }
+      ]);
+
+      renderBreakdown("alertBreakdown", [
+        { label: "Allow (Permanent)", count: map["alert-allow"].count, color: "var(--green)" },
+        { label: "Allow (Temporary)", count: map["alert-temp-allow"].count, color: "var(--blue)" },
+        { label: "Block", count: map["alert-block"].count, color: "var(--accent)" }
+      ]);
+
+      // Features & versions chips
+      const chipsEl = document.getElementById("featureChips");
+      const chips = [
+        { label: "Service Connected", count: map["service-connected"].count },
+        { label: "Presets Applied", count: map["preset-applied"].count },
+        ...versionList.map(v => ({
+          label: `v${v}`,
+          count: map[`version-${v.replace(/\./g, "_")}`].count
+        }))
+      ];
+      chipsEl.innerHTML = chips.map(c =>
+        `<div class="chip"><span>${c.label}</span><strong>${fmt(c.count)}</strong></div>`
+      ).join("");
+
+      document.getElementById("lastUpdated").textContent = new Date().toLocaleTimeString();
+    }
+
+    function setupAutoRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (document.getElementById("autoRefresh").checked) {
+        refreshTimer = setInterval(loadDashboard, 60000);
+      }
+    }
+
+    document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
+    document.getElementById("rangeSelect").addEventListener("change", loadDashboard);
+    document.getElementById("autoRefresh").addEventListener("change", setupAutoRefresh);
+    document.getElementById("addVersionForm").addEventListener("submit", e => {
+      e.preventDefault();
+      const input = document.getElementById("versionInput");
+      const v = input.value.trim().replace(/^v/i, "");
+      if (v) {
+        trackedVersions.add(v);
+        input.value = "";
+        loadDashboard();
+      }
+    });
+
+    loadDashboard();
+    setupAutoRefresh();
+  </script>
+</body>
+</html>

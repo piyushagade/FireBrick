@@ -5,14 +5,13 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:FireBrick.Core.Models">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,24">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Protection, Networks &amp; Blocklists" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="Auto-switching Wi-Fi/network profiles, domain &amp; IP blocklist subscriptions, and Rule Lock tamper protection." Opacity="0.7" />
-            </StackPanel>
-
-            <InfoBar x:Name="ProtectionInfoBar" IsOpen="False" IsClosable="True" />
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,72">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Protection, Networks &amp; Blocklists" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="Auto-switching Wi-Fi/network profiles, domain &amp; IP blocklist subscriptions, and Rule Lock tamper protection." Opacity="0.7" />
+                </StackPanel>
 
             <!-- 1. Rule Lock & Tamper Protection -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
@@ -135,5 +134,16 @@
             </Border>
 
         </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+
+        <InfoBar
+            x:Name="ProtectionInfoBar"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Stretch"
+            MaxWidth="1120"
+            Margin="24,0,28,16"
+            Background="{ThemeResource SolidBackgroundFillColorSecondaryBrush}"
+            IsOpen="False"
+            IsClosable="True" />
+    </Grid>
 </Page>

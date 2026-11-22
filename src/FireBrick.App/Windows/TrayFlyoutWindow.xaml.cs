@@ -42,10 +42,16 @@ public sealed partial class TrayFlyoutWindow : Window
         public IntPtr dwExtraInfo;
     }
 
+    private const double LogicalWidth = 268.0;
+    private const double FallbackLogicalHeight = 408.0;
+
     private readonly IntPtr _hwnd;
     private readonly LowLevelMouseProc _mouseHookDelegate;
     private IntPtr _mouseHook = IntPtr.Zero;
     private bool _allowClose;
+    private double _currentLogicalHeight;
+    private int _lastCursorX;
+    private int _lastCursorY;
 
     public event Action? OpenRequested;
     public event Action<string>? NavigateRequested;
@@ -98,18 +104,65 @@ public sealed partial class TrayFlyoutWindow : Window
 
         AppWindow.IsShownInSwitchers = false;
         AppWindow.Closing += OnWindowClosing;
+        MainView.SizeChanged += OnActiveViewSizeChanged;
+        NotifSubmenuView.SizeChanged += OnActiveViewSizeChanged;
+        NavSubmenuView.SizeChanged += OnActiveViewSizeChanged;
     }
 
     public void ShowAt(int cursorX, int cursorY, FirewallProfileMode profile, NotificationMode notif)
     {
+        _lastCursorX = cursorX;
+        _lastCursorY = cursorY;
+
         ApplyTheme();
         ShowMainView();
         UpdateVisualState(profile, notif);
+        ResizeAndPositionToContent();
 
-        double scale = Math.Max(1.0, GetDpiForWindow(_hwnd) / 96.0);
-        int width = (int)Math.Round(268 * scale);
-        int height = (int)Math.Round(392 * scale);
-        AppWindow.Resize(new SizeInt32(width, height));
+        // Show WITHOUT activating so the Windows 11 system tray overflow stays open!
+        AppWindow.Show(activateWindow: false);
+        InstallOutsideClickHook();
+    }
+
+    private void ResizeAndPositionToContent()
+    {
+        FrameworkElement active = MainView.Visibility == Visibility.Visible
+            ? MainView
+            : (NotifSubmenuView.Visibility == Visibility.Visible ? NotifSubmenuView : NavSubmenuView);
+
+        double innerWidth = LogicalWidth - RootGrid.Padding.Left - RootGrid.Padding.Right;
+        active.Measure(new global::Windows.Foundation.Size(innerWidth, double.PositiveInfinity));
+        double desired = Math.Ceiling(active.DesiredSize.Height + RootGrid.Padding.Top + RootGrid.Padding.Bottom);
+        double targetHeight = desired > 80 ? desired : FallbackLogicalHeight;
+        ResizeAndPosition(_lastCursorX, _lastCursorY, targetHeight);
+    }
+
+    private void OnActiveViewSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Visibility != Visibility.Visible || e.NewSize.Height <= 0)
+            return;
+
+        double neededLogicalHeight = Math.Ceiling(e.NewSize.Height + RootGrid.Padding.Top + RootGrid.Padding.Bottom);
+        if (AppWindow.IsVisible && Math.Abs(neededLogicalHeight - _currentLogicalHeight) >= 1.0)
+        {
+            ResizeAndPosition(_lastCursorX, _lastCursorY, neededLogicalHeight);
+        }
+    }
+
+    private void ResizeAndPosition(int cursorX, int cursorY, double logicalHeight)
+    {
+        double scale = RootGrid.XamlRoot?.RasterizationScale ?? (GetDpiForWindow(_hwnd) / 96.0);
+        scale = Math.Max(1.0, scale);
+
+        _currentLogicalHeight = logicalHeight;
+        int outerWidth = (int)Math.Ceiling((LogicalWidth + 2) * scale);
+        int outerHeight = (int)Math.Ceiling((logicalHeight + 10) * scale);
+        // Use AppWindow.Resize (not ResizeClient) because WinUI 3 ResizeClient adds phantom titlebar height on borderless windows
+        AppWindow.Resize(new SizeInt32(outerWidth, outerHeight));
+
+        var outerSize = AppWindow.Size;
+        int width = outerSize.Width > 0 ? outerSize.Width : outerWidth;
+        int height = outerSize.Height > 0 ? outerSize.Height : outerHeight;
 
         // Position cleanly above the tray cursor, clamped inside the monitor's work area
         try
@@ -134,10 +187,6 @@ public sealed partial class TrayFlyoutWindow : Window
             AppWindow.Move(new PointInt32(x, y));
         }
         catch { }
-
-        // Show WITHOUT activating so the Windows 11 system tray overflow stays open!
-        AppWindow.Show(activateWindow: false);
-        InstallOutsideClickHook();
     }
 
     public void HideFlyout()
@@ -218,10 +267,10 @@ public sealed partial class TrayFlyoutWindow : Window
     {
         var shieldColor = profile switch
         {
-            FirewallProfileMode.HighFiltering => global::Windows.UI.Color.FromArgb(255, 232, 17, 35),
-            FirewallProfileMode.MediumFiltering => global::Windows.UI.Color.FromArgb(255, 245, 158, 11),
-            FirewallProfileMode.LowFiltering => global::Windows.UI.Color.FromArgb(255, 16, 185, 129),
-            _ => global::Windows.UI.Color.FromArgb(255, 136, 142, 150)
+            FirewallProfileMode.HighFiltering => global::Windows.UI.Color.FromArgb(255, 59, 130, 246),   // Blue
+            FirewallProfileMode.MediumFiltering => global::Windows.UI.Color.FromArgb(255, 34, 197, 94),  // Green
+            FirewallProfileMode.LowFiltering => global::Windows.UI.Color.FromArgb(255, 245, 158, 11),    // Orange
+            _ => global::Windows.UI.Color.FromArgb(255, 239, 68, 68)                                     // Red
         };
         HeaderShieldIcon.Foreground = new SolidColorBrush(shieldColor);
 
@@ -267,6 +316,7 @@ public sealed partial class TrayFlyoutWindow : Window
         MainView.Visibility = Visibility.Collapsed;
         NotifSubmenuView.Visibility = Visibility.Visible;
         NavSubmenuView.Visibility = Visibility.Collapsed;
+        ResizeAndPositionToContent();
     }
 
     private void OpenNavSubmenu_Click(object sender, RoutedEventArgs e)
@@ -274,9 +324,14 @@ public sealed partial class TrayFlyoutWindow : Window
         MainView.Visibility = Visibility.Collapsed;
         NotifSubmenuView.Visibility = Visibility.Collapsed;
         NavSubmenuView.Visibility = Visibility.Visible;
+        ResizeAndPositionToContent();
     }
 
-    private void BackToMain_Click(object sender, RoutedEventArgs e) => ShowMainView();
+    private void BackToMain_Click(object sender, RoutedEventArgs e)
+    {
+        ShowMainView();
+        ResizeAndPositionToContent();
+    }
 
     private void ProfileItem_Click(object sender, RoutedEventArgs e)
     {

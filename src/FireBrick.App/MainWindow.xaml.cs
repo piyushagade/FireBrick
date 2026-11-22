@@ -9,6 +9,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics;
 using WinRT.Interop;
 
@@ -47,10 +48,11 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new SizeInt32(1240, 820));
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FireBrick.ico");
         if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
+        var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FireBrick.png");
+        if (File.Exists(logoPath)) TitleLogoImage.Source = new BitmapImage(new Uri(logoPath));
         AppWindow.Closing += OnAppWindowClosing;
 
         ApplyThemeFromSettings();
-        UpdateStatusPill();
         var ver = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
         VersionBadgeText.Text = $"v{ver}";
         NavView.IsPaneOpen = FirewallBackendService.Instance.GetSettings().IsSidebarOpen;
@@ -64,7 +66,6 @@ public sealed partial class MainWindow : Window
         svc.BlockedConnectionPromptRequested += OnBlockedConnectionPromptRequested;
         svc.ProfileModeChanged += OnProfileModeChanged;
         svc.NotificationModeChanged += OnNotificationModeChanged;
-        svc.ServiceConnectionChanged += (_, _) => DispatcherQueue.TryEnqueue(UpdateStatusPill);
 
         NavView.SelectedItem = NavView.MenuItems[0];
 
@@ -147,11 +148,7 @@ public sealed partial class MainWindow : Window
             var status = await FirewallBackendService.Instance.GetStatusAsync();
             _lastProfile = status.ProfileMode;
             _lastNotif = status.NotificationMode;
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _trayIcon.UpdateState(_lastProfile, _lastNotif);
-                UpdateTitleShieldColor(_lastProfile);
-            });
+            DispatcherQueue.TryEnqueue(() => _trayIcon.UpdateState(_lastProfile, _lastNotif));
         }
         catch { }
     }
@@ -159,23 +156,7 @@ public sealed partial class MainWindow : Window
     private void OnProfileModeChanged(object? sender, FirewallProfileMode mode)
     {
         _lastProfile = mode;
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            _trayIcon.UpdateState(_lastProfile, _lastNotif);
-            UpdateTitleShieldColor(_lastProfile);
-        });
-    }
-
-    private void UpdateTitleShieldColor(FirewallProfileMode mode)
-    {
-        var color = mode switch
-        {
-            FirewallProfileMode.HighFiltering => global::Windows.UI.Color.FromArgb(255, 232, 17, 35),    // Vivid Red
-            FirewallProfileMode.MediumFiltering => global::Windows.UI.Color.FromArgb(255, 245, 158, 11), // Vivid Amber
-            FirewallProfileMode.LowFiltering => global::Windows.UI.Color.FromArgb(255, 16, 185, 129),    // Emerald Green
-            _ => global::Windows.UI.Color.FromArgb(255, 136, 142, 150)                                   // Neutral Gray
-        };
-        TitleShieldIcon.Foreground = new SolidColorBrush(color);
+        DispatcherQueue.TryEnqueue(() => _trayIcon.UpdateState(_lastProfile, _lastNotif));
     }
 
     private void OnNotificationModeChanged(object? sender, NotificationMode mode)
@@ -215,26 +196,6 @@ public sealed partial class MainWindow : Window
             "Light" => ElementTheme.Light,
             _ => ElementTheme.Default
         };
-    }
-
-    public void UpdateStatusPill()
-    {
-        var svc = FirewallBackendService.Instance;
-        if (svc.IsUsingService)
-        {
-            StatusPillText.Text = "Service Connected";
-            StatusDot.Fill = new SolidColorBrush(Colors.LimeGreen);
-        }
-        else if (svc.IsElevated)
-        {
-            StatusPillText.Text = "Administrator Mode";
-            StatusDot.Fill = new SolidColorBrush(Colors.LimeGreen);
-        }
-        else
-        {
-            StatusPillText.Text = "Standard User (Read-Only)";
-            StatusDot.Fill = new SolidColorBrush(Colors.Orange);
-        }
     }
 
     public void NavigateToTag(string tag)

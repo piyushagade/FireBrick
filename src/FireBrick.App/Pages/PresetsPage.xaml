@@ -5,14 +5,13 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:FireBrick.Core.Models">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,24">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Presets &amp; Temporary Rules" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="One-click rule packs for hardening or onboarding, plus auto-expiring temporary rules." Opacity="0.7" />
-            </StackPanel>
-
-            <InfoBar x:Name="PresetsInfoBar" IsOpen="False" IsClosable="True" />
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,72">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Presets &amp; Temporary Rules" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="One-click rule packs for hardening or onboarding, plus auto-expiring temporary rules." Opacity="0.7" />
+                </StackPanel>
 
             <!-- Active Temporary Rules -->
             <StackPanel Spacing="10">
@@ -79,5 +78,16 @@
                 </ItemsControl>
             </StackPanel>
         </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+
+        <InfoBar
+            x:Name="PresetsInfoBar"
+            VerticalAlignment="Bottom"
+            HorizontalAlignment="Stretch"
+            MaxWidth="1120"
+            Margin="24,0,28,16"
+            Background="{ThemeResource SolidBackgroundFillColorSecondaryBrush}"
+            IsOpen="False"
+            IsClosable="True" />
+    </Grid>
 </Page>

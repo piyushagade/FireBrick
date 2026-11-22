@@ -279,75 +279,151 @@ public sealed class TrayIconService : IDisposable
     };
 
     /// <summary>
-    /// Generates a crisp 32x32 ARGB shield icon colored by the active filtering profile.
+    /// Generates a 2x2 supersampled, anti-aliased 32x32 ARGB two-tone interlocking brick-shield icon
+    /// matching FireBrick's B2 silhouette (without the flame), color-coded by filtering profile:
+    /// Blue = High, Green = Medium, Orange = Low, Red = No Filtering.
     /// </summary>
     private static IntPtr CreateShieldIcon(FirewallProfileMode mode)
     {
         const int size = 32;
-        var (r, g, b) = mode switch
+        const int ss = 2; // 2x2 supersampling for silky anti-aliased edges
+        const int hi = size * ss;
+
+        // (TopLight RGB, TopDark RGB, BotLight RGB, BotDark RGB)
+        var palette = mode switch
         {
-            FirewallProfileMode.HighFiltering => ((byte)0xE8, (byte)0x11, (byte)0x23),   // Vivid Red (Lockdown)
-            FirewallProfileMode.MediumFiltering => ((byte)0xF5, (byte)0x9E, (byte)0x0B), // Vivid Amber (Recommended)
-            FirewallProfileMode.LowFiltering => ((byte)0x10, (byte)0xB9, (byte)0x81),    // Emerald Green (Default)
-            _ => ((byte)0x88, (byte)0x8E, (byte)0x96)                                    // Neutral Gray (Disabled)
+            FirewallProfileMode.HighFiltering => (
+                TR1: 96, TG1: 165, TB1: 250,   // #60A5FA
+                TR2: 59, TG2: 130, TB2: 246,   // #3B82F6
+                BR1: 37, BG1: 99,  BB1: 235,   // #2563EB
+                BR2: 29, BG2: 78,  BB2: 216),  // #1D4ED8
+            FirewallProfileMode.MediumFiltering => (
+                TR1: 74, TG1: 222, TB1: 128,   // #4ADE80
+                TR2: 34, TG2: 197, TB2: 94,    // #22C55E
+                BR1: 22, BG1: 163, BB1: 74,    // #16A34A
+                BR2: 21, BG2: 128, BB2: 61),   // #15803D
+            FirewallProfileMode.LowFiltering => (
+                TR1: 251, TG1: 191, TB1: 36,   // #FBBF24
+                TR2: 245, TG2: 158, TB2: 11,   // #F59E0B
+                BR1: 234, BG1: 88,  BB1: 12,   // #EA580C
+                BR2: 194, BG2: 65,  BB2: 12),  // #C2410C
+            _ => (
+                TR1: 248, TG1: 113, TB1: 113,  // #F87171
+                TR2: 239, TG2: 68,  TB2: 68,   // #EF4444
+                BR1: 220, BG1: 38,  BB1: 38,   // #DC2626
+                BR2: 153, BG2: 27,  BB2: 27)   // #991B1B
         };
 
         var pixels = new byte[size * size * 4];
         var maskBits = new byte[(size / 8) * size];
 
+        static double ShieldHalfWidth(double nx, double ny)
+        {
+            // Normalized coordinates: ny in [0..1], center nx = 0.5
+            if (ny < 0.06 || ny > 0.94) return -1;
+
+            // Angled top crest (B2 roof): peaks at (0.5, 0.06), shoulders at (0.12/0.88, 0.22)
+            if (ny < 0.22)
+            {
+                double t = (ny - 0.06) / 0.16;
+                return 0.38 * t;
+            }
+
+            // Straight vertical upper sides down to ny = 0.52
+            if (ny <= 0.52)
+                return 0.38;
+
+            // Smooth curved taper to bottom tip at ny = 0.94
+            double u = (ny - 0.52) / 0.42;
+            return 0.38 * Math.Sqrt(Math.Max(0, 1.0 - u * u * 0.96)) * (1.0 - 0.22 * u * u);
+        }
+
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
             {
-                // Draw a clean shield silhouette centered at x=15.5
-                double dx = Math.Abs(x - 15.5);
-                double halfWidth;
-                if (y < 3 || y > 29)
+                double accR = 0, accG = 0, accB = 0, accA = 0;
+
+                for (int sy = 0; sy < ss; sy++)
                 {
-                    halfWidth = -1;
-                }
-                else if (y < 6)
-                {
-                    // Gently curved top crest
-                    halfWidth = 11.5;
-                }
-                else if (y <= 16)
-                {
-                    halfWidth = 11.5 - (y - 6) * 0.12;
-                }
-                else
-                {
-                    // Taper smoothly to bottom point
-                    double t = (y - 16) / 13.0;
-                    halfWidth = 10.3 * (1.0 - t * t);
+                    for (int sx = 0; sx < ss; sx++)
+                    {
+                        double nx = (x * ss + sx + 0.5) / hi;
+                        double ny = (y * ss + sy + 0.5) / hi;
+                        double dx = Math.Abs(nx - 0.5);
+                        double hw = ShieldHalfWidth(nx, ny);
+
+                        if (hw <= 0 || dx > hw)
+                            continue;
+
+                        // B2 interlocking brick seam: horizontal at ny=0.51, stepping down to ny=0.59 in center band
+                        double seamY = dx < 0.20 ? 0.59 : 0.51;
+                        bool isVerticalStep = Math.Abs(dx - 0.20) < 0.022 && ny >= 0.50 && ny <= 0.60;
+                        bool isHorizontalSeam = Math.Abs(ny - seamY) < 0.022;
+                        bool isSeam = isVerticalStep || isHorizontalSeam;
+
+                        // Top bevel highlight
+                        bool isTopHighlight = ny < 0.24 && (hw - dx < 0.045 || ny < 0.11);
+                        bool isOuterRim = (hw - dx) < 0.026 || ny > 0.91;
+
+                        double sr, sg, sb;
+                        if (isSeam)
+                        {
+                            // Crisp dark interlocking groove
+                            sr = palette.BR2 * 0.42;
+                            sg = palette.BG2 * 0.42;
+                            sb = palette.BB2 * 0.42;
+                        }
+                        else if (ny < seamY)
+                        {
+                            // Upper lighter brick plate
+                            double t = Math.Clamp((ny - 0.06) / 0.52, 0, 1);
+                            sr = palette.TR1 + (palette.TR2 - palette.TR1) * t;
+                            sg = palette.TG1 + (palette.TG2 - palette.TG1) * t;
+                            sb = palette.TB1 + (palette.TB2 - palette.TB1) * t;
+                            if (isTopHighlight)
+                            {
+                                sr = Math.Min(255, sr + 38);
+                                sg = Math.Min(255, sg + 38);
+                                sb = Math.Min(255, sb + 38);
+                            }
+                        }
+                        else
+                        {
+                            // Lower deeper brick plate
+                            double t = Math.Clamp((ny - 0.50) / 0.44, 0, 1);
+                            sr = palette.BR1 + (palette.BR2 - palette.BR1) * t;
+                            sg = palette.BG1 + (palette.BG2 - palette.BG1) * t;
+                            sb = palette.BB1 + (palette.BB2 - palette.BB1) * t;
+                        }
+
+                        if (isOuterRim && !isTopHighlight)
+                        {
+                            sr = Math.Min(255, sr * 1.12);
+                            sg = Math.Min(255, sg * 1.12);
+                            sb = Math.Min(255, sb * 1.12);
+                        }
+
+                        accR += sr;
+                        accG += sg;
+                        accB += sb;
+                        accA += 255.0;
+                    }
                 }
 
-                bool inside = halfWidth > 0 && dx <= halfWidth;
-                bool isBorder = inside && (dx > halfWidth - 2.0 || y <= 4 || y >= 28);
-
+                double samples = ss * ss;
                 int idx = (y * size + x) * 4;
-                if (inside)
+                if (accA > 0)
                 {
-                    if (isBorder)
-                    {
-                        pixels[idx + 0] = 0xFF; // B
-                        pixels[idx + 1] = 0xFF; // G
-                        pixels[idx + 2] = 0xFF; // R
-                        pixels[idx + 3] = 0xF0; // A
-                    }
-                    else
-                    {
-                        // Subtle top-to-bottom shading
-                        double shade = 1.0 - (y / 48.0);
-                        pixels[idx + 0] = (byte)(b * shade);
-                        pixels[idx + 1] = (byte)(g * shade);
-                        pixels[idx + 2] = (byte)(r * shade);
-                        pixels[idx + 3] = 0xFF;
-                    }
+                    double coverage = accA / (samples * 255.0);
+                    double invHits = 255.0 / accA;
+                    pixels[idx + 0] = (byte)Math.Clamp(accB * invHits, 0, 255);
+                    pixels[idx + 1] = (byte)Math.Clamp(accG * invHits, 0, 255);
+                    pixels[idx + 2] = (byte)Math.Clamp(accR * invHits, 0, 255);
+                    pixels[idx + 3] = (byte)Math.Clamp(coverage * 255.0, 0, 255);
                 }
                 else
                 {
-                    // Transparent pixel in mask
                     maskBits[y * (size / 8) + (x / 8)] |= (byte)(0x80 >> (x % 8));
                 }
             }

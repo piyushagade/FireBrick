@@ -286,6 +286,7 @@ public sealed class AppSettingsDto
     public bool CloseToTray { get; set; } = true;
     public bool StartMinimizedToTray { get; set; }
     public bool IsSidebarOpen { get; set; } = false;
+    public bool SendDiagnosticsAndUsage { get; set; } = true;
     public string Theme { get; set; } = "System"; // System, Dark, Light
     public int MaxLogEntries { get; set; } = 1000;
     public List<NetworkProfileRuleDto> NetworkProfileRules { get; set; } = new();

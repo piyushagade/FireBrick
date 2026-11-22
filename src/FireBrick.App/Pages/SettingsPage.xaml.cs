@@ -44,12 +44,20 @@ public sealed partial class SettingsPage : Page
             StartMinimizedToggle.IsOn = cfg.StartMinimizedToTray;
             StartWithWindowsToggle.IsOn = StartupManager.IsStartWithWindowsEnabled();
             ShellMenuToggle.IsOn = ShellContextMenuManager.IsInstalled();
+            DiagnosticsToggle.IsOn = cfg.SendDiagnosticsAndUsage;
 
             var svc = FirewallBackendService.Instance;
-            var svcState = StartupManager.QueryServiceState();
+            var health = StartupManager.InspectServiceHealth();
             PrivilegeStatusText.Text =
-                $"Service Status: {svcState} (IPC: {(svc.IsUsingService ? "Connected" : "Local Fallback")})   •   " +
+                $"Service Status: {health.State} (IPC: {(svc.IsUsingService ? "Connected" : "Local Fallback")})   •   " +
                 $"UI Process Elevated: {(svc.IsElevated ? "Yes (Administrator)" : "No (Standard User)")}";
+
+            RelaunchAdminBtn.Visibility = (!svc.IsUsingService && !svc.IsElevated) ? Visibility.Visible : Visibility.Collapsed;
+            InstallServiceBtn.Visibility = (!health.IsInstalled || health.NeedsUpdate) ? Visibility.Visible : Visibility.Collapsed;
+            InstallServiceBtn.Content = health.NeedsUpdate ? "Update Service" : "Install Service";
+            StartServiceBtn.Visibility = (health.IsInstalled && !health.IsRunning) ? Visibility.Visible : Visibility.Collapsed;
+            StopServiceBtn.Visibility = health.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+            UninstallServiceBtn.Visibility = health.IsInstalled ? Visibility.Visible : Visibility.Collapsed;
 
             var ver = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
             AboutVersionText.Text = $"FireBrick v{ver}   •   {RuntimeInformation.FrameworkDescription}   •   {Environment.OSVersion}";
@@ -122,12 +130,34 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void StartServiceButton_Click(object sender, RoutedEventArgs e)
+    private static async Task<string> WaitForServiceStateAsync(string expectedState, int maxWaitMs = 5000)
+    {
+        var sw = Stopwatch.StartNew();
+        string last = StartupManager.QueryServiceState();
+        while (sw.ElapsedMilliseconds < maxWaitMs)
+        {
+            if (string.Equals(last, expectedState, StringComparison.OrdinalIgnoreCase))
+                return last;
+            await Task.Delay(350);
+            last = await Task.Run(() => StartupManager.QueryServiceState());
+        }
+        return last;
+    }
+
+    private async void StartServiceButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             StartupManager.RunElevatedScCommand("start FireBrickService");
-            ShowInfo(InfoBarSeverity.Success, "Starting FireBrickService", "Requested service start via sc.exe.");
+            ShowInfo(InfoBarSeverity.Informational, "Starting FireBrickService...", "Waiting for service to start...");
+            var state = await WaitForServiceStateAsync("Running");
+            await FirewallBackendService.Instance.ReconnectServiceAsync();
+            LoadSettings();
+
+            if (state == "Running")
+                ShowInfo(InfoBarSeverity.Success, "FireBrickService Started", "FireBrickService is now running and connected.");
+            else
+                ShowInfo(InfoBarSeverity.Warning, "Service Did Not Start", $"Current service state: {state}.");
         }
         catch (Exception ex)
         {
@@ -135,12 +165,20 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void StopServiceButton_Click(object sender, RoutedEventArgs e)
+    private async void StopServiceButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             StartupManager.RunElevatedScCommand("stop FireBrickService");
-            ShowInfo(InfoBarSeverity.Informational, "Stopping FireBrickService", "Requested service stop via sc.exe.");
+            ShowInfo(InfoBarSeverity.Informational, "Stopping FireBrickService...", "Waiting for service to stop...");
+            var state = await WaitForServiceStateAsync("Stopped");
+            await FirewallBackendService.Instance.ReconnectServiceAsync();
+            LoadSettings();
+
+            if (state == "Stopped")
+                ShowInfo(InfoBarSeverity.Success, "FireBrickService Stopped", "FireBrickService has been stopped.");
+            else
+                ShowInfo(InfoBarSeverity.Warning, "Service Still Active", $"Current service state: {state}.");
         }
         catch (Exception ex)
         {
@@ -148,7 +186,7 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void UninstallServiceButton_Click(object sender, RoutedEventArgs e)
+    private async void UninstallServiceButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -159,7 +197,15 @@ public sealed partial class SettingsPage : Page
                 UseShellExecute = true,
                 Verb = "runas"
             });
-            ShowInfo(InfoBarSeverity.Informational, "Uninstall Initiated", "Stopping and removing FireBrickService.");
+            ShowInfo(InfoBarSeverity.Informational, "Uninstalling FireBrickService...", "Stopping and removing service...");
+            var state = await WaitForServiceStateAsync("Not Installed", 6000);
+            await FirewallBackendService.Instance.ReconnectServiceAsync();
+            LoadSettings();
+
+            if (state == "Not Installed")
+                ShowInfo(InfoBarSeverity.Success, "FireBrickService Uninstalled", "FireBrickService has been removed.");
+            else
+                ShowInfo(InfoBarSeverity.Warning, "Uninstall Incomplete", $"Current service state: {state}.");
         }
         catch (Exception ex)
         {
@@ -188,6 +234,14 @@ public sealed partial class SettingsPage : Page
         if (_loading) return;
         var cfg = FirewallBackendService.Instance.GetSettings();
         cfg.StartMinimizedToTray = StartMinimizedToggle.IsOn;
+        FirewallBackendService.Instance.SaveSettings(cfg);
+    }
+
+    private void DiagnosticsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        var cfg = FirewallBackendService.Instance.GetSettings();
+        cfg.SendDiagnosticsAndUsage = DiagnosticsToggle.IsOn;
         FirewallBackendService.Instance.SaveSettings(cfg);
     }
 

@@ -24,10 +24,13 @@ public sealed class FirewallBackendService : IDisposable
     private readonly RuleLockMonitor _localRuleLock = new();
     private readonly BlocklistManager _localBlocklists = new();
     private readonly SettingsStore _settingsStore = new();
+    private readonly UsageAnalyticsService _analytics;
     private readonly DnsResolverCache _dnsCache = new();
     private readonly GeoIpResolverCache _geoIpCache = new();
     private readonly Timer _expiryTimer;
     private readonly Timer _serviceEventPollTimer;
+    private readonly Timer _dailyAnalyticsTimer;
+    private readonly string? _selfExecutablePath = Environment.ProcessPath;
     private readonly HashSet<string> _notifiedApps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _seenServiceEventKeys = new(StringComparer.Ordinal);
     private readonly DateTimeOffset _sessionStartUtc = DateTimeOffset.UtcNow;
@@ -38,6 +41,7 @@ public sealed class FirewallBackendService : IDisposable
     public bool IsElevated => WindowsFirewallManager.IsProcessElevated();
     public DnsResolverCache DnsCache => _dnsCache;
     public GeoIpResolverCache GeoIpCache => _geoIpCache;
+    public UsageAnalyticsService Analytics => _analytics;
     public string? PendingRulesSearchFilter { get; set; }
 
     public event EventHandler<ConnectionEventDto>? BlockedConnectionPromptRequested;
@@ -48,9 +52,11 @@ public sealed class FirewallBackendService : IDisposable
 
     private FirewallBackendService()
     {
+        _analytics = new UsageAnalyticsService(() => _settingsStore.Get().SendDiagnosticsAndUsage);
         _localAudit.ConnectionEventReceived += OnLocalAuditEvent;
         _expiryTimer = new Timer(_ => CheckLocalExpiredRules(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
         _serviceEventPollTimer = new Timer(_ => _ = PollServiceEventsAsync(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        _dailyAnalyticsTimer = new Timer(_ => _ = TrackDailyAnalyticsAsync(), null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
     }
 
     public async Task InitializeAsync()
@@ -73,6 +79,70 @@ public sealed class FirewallBackendService : IDisposable
         {
             _localAudit.TryStart(loadRecentHistory: true);
         }
+
+        _ = TrackLaunchAnalyticsAsync();
+    }
+
+    private async Task TrackLaunchAnalyticsAsync()
+    {
+        try
+        {
+            await EnsureSelfOutboundRuleAsync().ConfigureAwait(false);
+            var status = await GetStatusAsync().ConfigureAwait(false);
+            await _analytics.TrackAppLaunchAsync(status.ProfileMode, IsUsingService).ConfigureAwait(false);
+        }
+        catch { }
+    }
+
+    private async Task EnsureSelfOutboundRuleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selfExecutablePath))
+            return;
+
+        var cfg = _settingsStore.Get();
+        if (!cfg.SendDiagnosticsAndUsage && !cfg.EnableGeoIpLookup)
+            return;
+
+        try
+        {
+            var rules = await GetRulesAsync().ConfigureAwait(false);
+            bool hasExistingSelfRule = rules.Any(r =>
+                r.Direction == RuleDirection.Outbound &&
+                (string.Equals(r.ExpandedApplicationPath, _selfExecutablePath, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(r.ApplicationName, _selfExecutablePath, StringComparison.OrdinalIgnoreCase)));
+
+            if (hasExistingSelfRule)
+                return;
+
+            await CreateRuleAsync(new FirewallRuleDto
+            {
+                Name = "FireBrick: Allow Self Outbound (HTTP/HTTPS)",
+                Description = "Allows FireBrick to perform GeoIP lookups, blocklist syncs, and anonymous usage analytics (when enabled in Settings).",
+                ApplicationName = _selfExecutablePath,
+                ExpandedApplicationPath = _selfExecutablePath,
+                Protocol = 6, // TCP
+                RemotePorts = "80,443",
+                Direction = RuleDirection.Outbound,
+                Action = RuleAction.Allow,
+                Enabled = true,
+                Profiles = FirewallProfileFlags.All,
+                Grouping = "FireBrick Rules"
+            }).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal if running unprivileged without service
+        }
+    }
+
+    private async Task TrackDailyAnalyticsAsync()
+    {
+        try
+        {
+            var status = await GetStatusAsync().ConfigureAwait(false);
+            await _analytics.TrackDailyActiveIfNeededAsync(status.ProfileMode, IsUsingService).ConfigureAwait(false);
+        }
+        catch { }
     }
 
     public async Task<bool> ReconnectServiceAsync()
@@ -101,12 +171,30 @@ public sealed class FirewallBackendService : IDisposable
 
     public void SaveSettings(AppSettingsDto settings) => _settingsStore.Save(settings);
 
+    private void MarkServiceDisconnected()
+    {
+        bool was = IsUsingService;
+        IsUsingService = false;
+        _lastServiceProbeUtc = DateTimeOffset.UtcNow;
+        if (was)
+        {
+            ServiceConnectionChanged?.Invoke(this, false);
+        }
+    }
+
     public async Task<FirewallStatusDto> GetStatusAsync()
     {
         if (await TryUseServiceAsync().ConfigureAwait(false))
         {
-            var status = await _ipc.SendAndDeserializeAsync<FirewallStatusDto>(IpcCommands.GetStatus).ConfigureAwait(false);
-            if (status != null) return status;
+            try
+            {
+                var status = await _ipc.SendAndDeserializeAsync<FirewallStatusDto>(IpcCommands.GetStatus, null, 2500).ConfigureAwait(false);
+                if (status != null) return status;
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
         }
 
         return await Task.Run(() =>
@@ -168,8 +256,15 @@ public sealed class FirewallBackendService : IDisposable
     {
         if (await TryUseServiceAsync().ConfigureAwait(false))
         {
-            return await _ipc.SendAndDeserializeAsync<List<FirewallRuleDto>>(IpcCommands.GetRules).ConfigureAwait(false)
-                   ?? new List<FirewallRuleDto>();
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<List<FirewallRuleDto>>(IpcCommands.GetRules, null, 4000).ConfigureAwait(false)
+                       ?? new List<FirewallRuleDto>();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
         }
 
         return await Task.Run(() => _localFirewall.GetRules(_localTempRules.GetActiveMap())).ConfigureAwait(false);
@@ -389,8 +484,15 @@ public sealed class FirewallBackendService : IDisposable
     {
         if (await TryUseServiceAsync().ConfigureAwait(false))
         {
-            return await _ipc.SendAndDeserializeAsync<List<ConnectionEventDto>>(IpcCommands.GetRecentEvents).ConfigureAwait(false)
-                   ?? new List<ConnectionEventDto>();
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<List<ConnectionEventDto>>(IpcCommands.GetRecentEvents, null, 3000).ConfigureAwait(false)
+                       ?? new List<ConnectionEventDto>();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
         }
 
         return await Task.Run(() => _localAudit.GetRecentEvents(500)).ConfigureAwait(false);
@@ -400,8 +502,15 @@ public sealed class FirewallBackendService : IDisposable
     {
         if (await TryUseServiceAsync().ConfigureAwait(false))
         {
-            return await _ipc.SendAndDeserializeAsync<List<ActiveConnectionDto>>(IpcCommands.GetActiveConnections).ConfigureAwait(false)
-                   ?? new List<ActiveConnectionDto>();
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<List<ActiveConnectionDto>>(IpcCommands.GetActiveConnections, null, 3000).ConfigureAwait(false)
+                       ?? new List<ActiveConnectionDto>();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
         }
 
         return await Task.Run(() => _localLive.GetActiveConnections()).ConfigureAwait(false);
@@ -411,8 +520,15 @@ public sealed class FirewallBackendService : IDisposable
     {
         if (await TryUseServiceAsync().ConfigureAwait(false))
         {
-            return await _ipc.SendAndDeserializeAsync<List<TemporaryRuleDto>>(IpcCommands.GetTemporaryRules).ConfigureAwait(false)
-                   ?? new List<TemporaryRuleDto>();
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<List<TemporaryRuleDto>>(IpcCommands.GetTemporaryRules, null, 2500).ConfigureAwait(false)
+                       ?? new List<TemporaryRuleDto>();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
         }
 
         return _localTempRules.GetActive().ToList();
@@ -461,6 +577,9 @@ public sealed class FirewallBackendService : IDisposable
             await CreateRuleAsync(rule).ConfigureAwait(false);
             created++;
         }
+
+        if (created > 0)
+            _analytics.TrackPresetApplied();
 
         return created;
     }
@@ -552,6 +671,11 @@ public sealed class FirewallBackendService : IDisposable
             (evt.EventId == 5152 && evt.ProcessId == 0))
             return;
 
+        // Avoid self-prompt loops if FireBrick.App.exe itself is blocked in Medium/High filtering mode
+        if (!string.IsNullOrWhiteSpace(_selfExecutablePath) &&
+            string.Equals(evt.ApplicationPath, _selfExecutablePath, StringComparison.OrdinalIgnoreCase))
+            return;
+
         var mode = _settingsStore.Get().NotificationMode;
         if (mode == NotificationMode.Disabled) return;
 
@@ -577,6 +701,7 @@ public sealed class FirewallBackendService : IDisposable
             {
                 if (!_notifiedApps.Add(evt.ApplicationPath)) return;
             }
+            _analytics.TrackInterception();
             BlockedConnectionPromptRequested?.Invoke(this, evt);
         }
     }
@@ -597,8 +722,10 @@ public sealed class FirewallBackendService : IDisposable
 
     public void Dispose()
     {
+        _dailyAnalyticsTimer.Dispose();
         _serviceEventPollTimer.Dispose();
         _expiryTimer.Dispose();
         _localAudit.Dispose();
+        _analytics.Dispose();
     }
 }
