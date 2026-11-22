@@ -231,7 +231,7 @@
                                             <Border Height="4" Width="{x:Bind BarWidth}" HorizontalAlignment="Left" CornerRadius="2" Background="{StaticResource FireBrickBlockBrush}" />
                                         </StackPanel>
                                         <TextBlock Grid.Column="1" Text="{x:Bind BlockedCount}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Opacity="0.85" />
-                                        <Button Grid.Column="2" Content="Allow" Padding="8,3" FontSize="11" Tag="{x:Bind ApplicationPath}" Click="QuickAllowTopApp_Click" />
+                                        <Button Grid.Column="2" Content="{x:Bind ButtonLabel}" IsEnabled="{x:Bind CanAllow}" Padding="8,3" FontSize="11" Tag="{x:Bind ApplicationPath}" Click="QuickAllowTopApp_Click" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

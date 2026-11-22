@@ -74,8 +74,28 @@ public static class AppAggregator
             .ToList();
     }
 
-    public static List<TopAppStatDto> BuildTopBlockedApps(IEnumerable<ConnectionEventDto> events, int topCount = 5, double maxBarWidth = 180)
+    public static List<TopAppStatDto> BuildTopBlockedApps(
+        IEnumerable<ConnectionEventDto> events,
+        IEnumerable<FirewallRuleDto>? currentRules = null,
+        int topCount = 5,
+        double maxBarWidth = 180)
     {
+        var allowedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (currentRules != null)
+        {
+            foreach (var r in currentRules)
+            {
+                if (r.Enabled && r.Direction == RuleDirection.Outbound && r.Action == RuleAction.Allow)
+                {
+                    var p = !string.IsNullOrWhiteSpace(r.ExpandedApplicationPath)
+                        ? r.ExpandedApplicationPath
+                        : r.ApplicationName;
+                    if (!string.IsNullOrWhiteSpace(p))
+                        allowedPaths.Add(p.Trim());
+                }
+            }
+        }
+
         var grouped = events
             .Where(e => e.Action == RuleAction.Block && !string.IsNullOrWhiteSpace(e.ApplicationName))
             .GroupBy(e => string.IsNullOrWhiteSpace(e.ApplicationPath) ? e.ApplicationName : e.ApplicationPath, StringComparer.OrdinalIgnoreCase)
@@ -95,7 +115,8 @@ public static class AppAggregator
             ApplicationName = x.Name,
             ApplicationPath = x.Path,
             BlockedCount = x.Count,
-            BarWidth = Math.Max(14, (x.Count / (double)max) * maxBarWidth)
+            BarWidth = Math.Max(14, (x.Count / (double)max) * maxBarWidth),
+            IsAllowed = !string.IsNullOrWhiteSpace(x.Path) && allowedPaths.Contains(x.Path.Trim())
         }).ToList();
     }
 

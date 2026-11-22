@@ -41,18 +41,24 @@ public sealed partial class DashboardPage : Page
         DispatcherQueue.TryEnqueue(() => _ = LoadStatusAsync());
     }
 
-    private async Task LoadStatusAsync()
+    private async Task LoadStatusAsync(bool preserveBanner = false)
     {
         _isLoading = true;
         try
         {
-            var status = await FirewallBackendService.Instance.GetStatusAsync();
-            var recentEvents = await FirewallBackendService.Instance.GetRecentEventsAsync();
+            var statusTask = FirewallBackendService.Instance.GetStatusAsync();
+            var eventsTask = FirewallBackendService.Instance.GetRecentEventsAsync();
+            var rulesTask = FirewallBackendService.Instance.GetRulesAsync();
+            await Task.WhenAll(statusTask, eventsTask, rulesTask);
+
+            var status = statusTask.Result;
+            var recentEvents = eventsTask.Result;
+            var currentRules = rulesTask.Result;
 
             var buckets = AppAggregator.BuildActivityBuckets(recentEvents, bucketCount: 12, maxHeight: 62);
             ActivityChartItems.ItemsSource = buckets;
 
-            var topBlocked = AppAggregator.BuildTopBlockedApps(recentEvents, topCount: 5, maxBarWidth: 160);
+            var topBlocked = AppAggregator.BuildTopBlockedApps(recentEvents, currentRules, topCount: 5, maxBarWidth: 160);
             TopBlockedList.ItemsSource = topBlocked;
             EmptyTopBlockedText.Visibility = topBlocked.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -124,7 +130,7 @@ public sealed partial class DashboardPage : Page
                 ShowBanner(InfoBarSeverity.Informational, "WFP Connection Auditing Disabled",
                     "Enable WFP Auditing in Settings to see real-time blocked connection notifications in the Connections Log.");
             }
-            else
+            else if (!preserveBanner)
             {
                 StatusBanner.IsOpen = false;
             }
@@ -206,14 +212,19 @@ public sealed partial class DashboardPage : Page
     private async void QuickAllowTopApp_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not string appPath || string.IsNullOrWhiteSpace(appPath)) return;
+        btn.IsEnabled = false;
+        btn.Content = "Allowing...";
         try
         {
             var rule = await FirewallBackendService.Instance.CreateQuickRuleAsync(appPath, RuleAction.Allow, RuleDirection.Outbound);
+            btn.Content = "Allowed ✓";
             ShowBanner(InfoBarSeverity.Success, "Rule Created", $"Allowed '{rule.ApplicationDisplay}' outbound.");
-            await LoadStatusAsync();
+            await LoadStatusAsync(preserveBanner: true);
         }
         catch (Exception ex)
         {
+            btn.IsEnabled = true;
+            btn.Content = "Allow";
             ShowBanner(InfoBarSeverity.Error, "Failed to allow app", ex.Message);
         }
     }

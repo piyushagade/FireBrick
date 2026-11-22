@@ -388,6 +388,13 @@ public sealed class TopAppStatDto
     public string ApplicationPath { get; set; } = string.Empty;
     public int BlockedCount { get; set; }
     public double BarWidth { get; set; }
+    public bool IsAllowed { get; set; }
+
+    [JsonIgnore]
+    public string ButtonLabel => IsAllowed ? "Allowed ✓" : "Allow";
+
+    [JsonIgnore]
+    public bool CanAllow => !IsAllowed;
 }
 
 public sealed class ActivityBucketDto
