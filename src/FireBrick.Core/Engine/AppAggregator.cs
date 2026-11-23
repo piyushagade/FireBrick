@@ -54,7 +54,7 @@ public static class AppAggregator
 
         foreach (var e in recentEvents)
         {
-            if (e.Action != RuleAction.Block) continue;
+            if (e.Action != RuleAction.Block || !IsValidApplicationEvent(e)) continue;
             var path = !string.IsNullOrWhiteSpace(e.ApplicationPath) ? e.ApplicationPath : e.ApplicationName;
             if (string.IsNullOrWhiteSpace(path)) continue;
             var g = GetOrAdd(path, e.ApplicationName);
@@ -97,7 +97,7 @@ public static class AppAggregator
         }
 
         var grouped = events
-            .Where(e => e.Action == RuleAction.Block && !string.IsNullOrWhiteSpace(e.ApplicationName))
+            .Where(e => e.Action == RuleAction.Block && IsValidApplicationEvent(e))
             .GroupBy(e => string.IsNullOrWhiteSpace(e.ApplicationPath) ? e.ApplicationName : e.ApplicationPath, StringComparer.OrdinalIgnoreCase)
             .Select(g => new
             {
@@ -151,5 +151,133 @@ public static class AppAggregator
         }
 
         return buckets;
+    }
+
+    public static List<LiveAppSummaryDto> BuildLiveActiveApps(
+        IEnumerable<ActiveConnectionDto> activeConnections,
+        int topCount = 6)
+    {
+        return activeConnections
+            .Where(c => !string.IsNullOrWhiteSpace(c.ProcessPath) || !string.IsNullOrWhiteSpace(c.ProcessName))
+            .GroupBy(
+                c => !string.IsNullOrWhiteSpace(c.ProcessPath) ? c.ProcessPath.Trim() : c.ProcessName.Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var first = g.First();
+                var path = first.ProcessPath?.Trim() ?? string.Empty;
+                var name = !string.IsNullOrWhiteSpace(path) && path.Contains('\\')
+                    ? Path.GetFileName(path)
+                    : (!string.IsNullOrWhiteSpace(first.ProcessName) ? first.ProcessName : "System");
+
+                int tcpCount = g.Count(c => string.Equals(c.Protocol, "TCP", StringComparison.OrdinalIgnoreCase));
+                int udpCount = g.Count(c => string.Equals(c.Protocol, "UDP", StringComparison.OrdinalIgnoreCase));
+                var protoParts = new List<string>(2);
+                if (tcpCount > 0) protoParts.Add($"{tcpCount} TCP");
+                if (udpCount > 0) protoParts.Add($"{udpCount} UDP");
+
+                var topPorts = g.Where(c => c.RemotePort > 0)
+                    .Select(c => c.RemotePort)
+                    .Distinct()
+                    .OrderBy(p => p)
+                    .Take(3)
+                    .Select(p => p.ToString())
+                    .ToList();
+
+                var detail = string.Join(", ", protoParts);
+                if (topPorts.Count > 0)
+                    detail = $"{detail} • ports {string.Join(", ", topPorts)}";
+
+                return new LiveAppSummaryDto
+                {
+                    ApplicationName = name,
+                    ApplicationPath = path,
+                    ConnectionCount = g.Count(),
+                    DetailSummary = detail
+                };
+            })
+            .OrderByDescending(x => x.ConnectionCount)
+            .ThenBy(x => x.ApplicationName, StringComparer.OrdinalIgnoreCase)
+            .Take(topCount)
+            .ToList();
+    }
+
+    public static List<RecentBlockedItemDto> BuildRecentBlockedFeed(
+        IEnumerable<ConnectionEventDto> events,
+        IEnumerable<FirewallRuleDto>? currentRules = null,
+        int maxCount = 6)
+    {
+        var allowedOutbound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var allowedInbound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (currentRules != null)
+        {
+            foreach (var r in currentRules)
+            {
+                if (r.Enabled && r.Action == RuleAction.Allow)
+                {
+                    var p = !string.IsNullOrWhiteSpace(r.ExpandedApplicationPath)
+                        ? r.ExpandedApplicationPath
+                        : r.ApplicationName;
+                    if (string.IsNullOrWhiteSpace(p)) continue;
+
+                    if (r.Direction == RuleDirection.Outbound)
+                        allowedOutbound.Add(p.Trim());
+                    else
+                        allowedInbound.Add(p.Trim());
+                }
+            }
+        }
+
+        return events
+            .Where(e => e.Action == RuleAction.Block && IsValidApplicationEvent(e))
+            .GroupBy(
+                e => $"{e.ApplicationPath.Trim()}|{e.Direction}|{e.Protocol}|{e.RemoteEndpoint}",
+                StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var latest = g.OrderByDescending(x => x.TimestampUtc).First();
+                var dir = latest.Direction == RuleDirection.Inbound ? "IN" : "OUT";
+                var endpoint = !string.IsNullOrWhiteSpace(latest.RemoteHostName)
+                    ? $"{latest.RemoteHostName}:{latest.RemotePort}"
+                    : latest.RemoteEndpoint;
+                if (!string.IsNullOrWhiteSpace(latest.GeoLocation))
+                    endpoint = $"{endpoint} ({latest.GeoLocation})";
+
+                var trimmedPath = latest.ApplicationPath.Trim();
+                bool isAllowed = !string.IsNullOrWhiteSpace(trimmedPath) &&
+                    (latest.Direction == RuleDirection.Inbound
+                        ? allowedInbound.Contains(trimmedPath)
+                        : allowedOutbound.Contains(trimmedPath));
+
+                return new
+                {
+                    latest.TimestampUtc,
+                    Item = new RecentBlockedItemDto
+                    {
+                        TimeDisplay = latest.LocalTimeDisplay,
+                        ApplicationName = latest.ApplicationName,
+                        ApplicationPath = latest.ApplicationPath,
+                        Direction = latest.Direction,
+                        DirectionProtocol = $"{dir} • {latest.Protocol}",
+                        RemoteEndpoint = string.IsNullOrWhiteSpace(endpoint) ? "—" : endpoint,
+                        HitCount = g.Count(),
+                        IsAllowed = isAllowed
+                    }
+                };
+            })
+            .OrderByDescending(x => x.TimestampUtc)
+            .Take(maxCount)
+            .Select(x => x.Item)
+            .ToList();
+    }
+
+    private static bool IsValidApplicationEvent(ConnectionEventDto e)
+    {
+        if (string.IsNullOrWhiteSpace(e.ApplicationName)) return false;
+        var name = e.ApplicationName.Trim();
+        if (name == "-" || name.Equals("System / Kernel", StringComparison.OrdinalIgnoreCase)) return false;
+        var path = e.ApplicationPath?.Trim();
+        if (string.IsNullOrWhiteSpace(path) || path == "-") return false;
+        return true;
     }
 }

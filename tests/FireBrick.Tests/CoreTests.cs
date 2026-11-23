@@ -178,7 +178,9 @@ public class CoreTests
         var events = new List<ConnectionEventDto>
         {
             new() { ApplicationName = "app.exe", ApplicationPath = @"C:\app.exe", Action = RuleAction.Block, TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-2) },
-            new() { ApplicationName = "app.exe", ApplicationPath = @"C:\app.exe", Action = RuleAction.Block, TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-1) }
+            new() { ApplicationName = "app.exe", ApplicationPath = @"C:\app.exe", Action = RuleAction.Block, TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-1) },
+            new() { ApplicationName = "-", ApplicationPath = "-", Action = RuleAction.Block, TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-1) },
+            new() { ApplicationName = "System / Kernel", ApplicationPath = "", Action = RuleAction.Block, TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-1) }
         };
 
         var groups = AppAggregator.GroupByApplication(rules, live, events);
@@ -194,6 +196,33 @@ public class CoreTests
         var buckets = AppAggregator.BuildActivityBuckets(events);
         Assert.Equal(12, buckets.Count);
         Assert.True(buckets.Sum(b => b.BlockedCount) >= 2);
+    }
+
+    [Fact]
+    public void BuildRecentBlockedFeed_CollapsesDuplicatesAndChecksMatchingDirection()
+    {
+        var rules = new List<FirewallRuleDto>
+        {
+            new() { Name = "Allow Edge Out", ApplicationName = @"C:\msedge.exe", ExpandedApplicationPath = @"C:\msedge.exe", Direction = RuleDirection.Outbound, Action = RuleAction.Allow, Enabled = true }
+        };
+        var now = DateTimeOffset.UtcNow;
+        var events = new List<ConnectionEventDto>
+        {
+            new() { ApplicationName = "msedge.exe", ApplicationPath = @"C:\msedge.exe", Direction = RuleDirection.Inbound, Protocol = "UDP", RemoteAddress = "100.80.115.4", RemotePort = 5353, Action = RuleAction.Block, TimestampUtc = now.AddSeconds(-2) },
+            new() { ApplicationName = "msedge.exe", ApplicationPath = @"C:\msedge.exe", Direction = RuleDirection.Inbound, Protocol = "UDP", RemoteAddress = "100.80.115.4", RemotePort = 5353, Action = RuleAction.Block, TimestampUtc = now.AddSeconds(-1) },
+            new() { ApplicationName = "msedge.exe", ApplicationPath = @"C:\msedge.exe", Direction = RuleDirection.Outbound, Protocol = "TCP", RemoteAddress = "1.1.1.1", RemotePort = 443, Action = RuleAction.Block, TimestampUtc = now.AddSeconds(-3) }
+        };
+
+        var feed = AppAggregator.BuildRecentBlockedFeed(events, rules);
+        Assert.Equal(2, feed.Count);
+        // Inbound burst collapsed into 1 row with HitCount == 2 and NOT marked Allowed (only outbound Allow exists)
+        Assert.Equal(RuleDirection.Inbound, feed[0].Direction);
+        Assert.Equal(2, feed[0].HitCount);
+        Assert.False(feed[0].IsAllowed);
+        Assert.True(feed[0].CanAllow);
+        // Outbound event IS marked Allowed because outbound Allow rule exists
+        Assert.Equal(RuleDirection.Outbound, feed[1].Direction);
+        Assert.True(feed[1].IsAllowed);
     }
 
     [Fact]
@@ -348,6 +377,197 @@ public class CoreTests
         finally
         {
             if (File.Exists(statePath)) File.Delete(statePath);
+        }
+    }
+
+    [Fact]
+    public void AutoRuleManager_MatchesByNamePublisherIpCidrDomainAndPriority()
+    {
+        var rules = new List<AutoRuleDto>
+        {
+            // Higher-priority block rule overrides lower-priority Microsoft publisher allow
+            new()
+            {
+                Id = "block-copilot",
+                Name = "Block Copilot",
+                MatchField = AutoRuleMatchField.AppNameOrPath,
+                Pattern = "*copilot*.exe",
+                Action = RuleAction.Block,
+                TriggerMode = AutoRuleTriggerMode.Instant
+            },
+            new()
+            {
+                Id = "allow-ms",
+                Name = "Allow Microsoft",
+                MatchField = AutoRuleMatchField.Publisher,
+                Pattern = "Microsoft Corporation",
+                RequireTrustedSignature = true,
+                Action = RuleAction.Allow,
+                TriggerMode = AutoRuleTriggerMode.Countdown,
+                CountdownSeconds = 5
+            },
+            new()
+            {
+                Id = "block-azure-cidr",
+                Name = "Block Telemetry CIDR",
+                MatchField = AutoRuleMatchField.IpOrCidr,
+                Pattern = "40.79.0.0/16:443",
+                Action = RuleAction.Block,
+                TriggerMode = AutoRuleTriggerMode.Instant
+            },
+            new()
+            {
+                Id = "block-domain",
+                Name = "Block Telemetry Host",
+                MatchField = AutoRuleMatchField.DomainOrHost,
+                Pattern = "https://telemetry.example.com/v1, Microsoft Azure",
+                Action = RuleAction.Block,
+                TriggerMode = AutoRuleTriggerMode.Instant
+            }
+        };
+
+        // 1. Copilot signed by Microsoft hits higher-priority Block rule first
+        var copilotEvt = new ConnectionEventDto
+        {
+            ApplicationName = "m365copilotsetup.exe",
+            ApplicationPath = @"C:\Program Files\Common Files\Microsoft Shared\m365copilotsetup.exe",
+            Publisher = "Microsoft Corporation",
+            SignatureStatus = SignatureTrustStatus.Trusted,
+            RemoteAddress = "40.79.167.9",
+            RemotePort = 443
+        };
+        var m1 = AutoRuleManager.Match(copilotEvt, rules);
+        Assert.NotNull(m1);
+        Assert.Equal("block-copilot", m1!.Id);
+
+        // 2. Trusted Microsoft app (non-copilot) hits Publisher rule
+        var msAppEvt = new ConnectionEventDto
+        {
+            ApplicationName = "winword.exe",
+            ApplicationPath = @"C:\Program Files\Microsoft Office\winword.exe",
+            Publisher = "Microsoft Corporation",
+            SignatureStatus = SignatureTrustStatus.Trusted,
+            RemoteAddress = "13.107.42.14",
+            RemotePort = 443
+        };
+        var m2 = AutoRuleManager.Match(msAppEvt, rules);
+        Assert.NotNull(m2);
+        Assert.Equal("allow-ms", m2!.Id);
+        Assert.Equal(AutoRuleTriggerMode.Countdown, m2.TriggerMode);
+
+        // 3. Untrusted/spoofed Microsoft publisher MUST NOT match RequireTrustedSignature=true rule
+        var spoofedEvt = new ConnectionEventDto
+        {
+            ApplicationName = "fake.exe",
+            ApplicationPath = @"C:\Temp\fake.exe",
+            Publisher = "Microsoft Corporation",
+            SignatureStatus = SignatureTrustStatus.Untrusted,
+            RemoteAddress = "1.1.1.1",
+            RemotePort = 443
+        };
+        Assert.Null(AutoRuleManager.Match(spoofedEvt, rules));
+
+        // 4. CIDR + port match
+        var cidrEvt = new ConnectionEventDto
+        {
+            ApplicationName = "other.exe",
+            ApplicationPath = @"C:\other.exe",
+            RemoteAddress = "40.79.167.9",
+            RemotePort = 443
+        };
+        var m4 = AutoRuleManager.Match(cidrEvt, rules);
+        Assert.NotNull(m4);
+        Assert.Equal("block-azure-cidr", m4!.Id);
+
+        // 5. Domain / URL normalization + subdomain match
+        var domainEvt = new ConnectionEventDto
+        {
+            ApplicationName = "other.exe",
+            ApplicationPath = @"C:\other.exe",
+            RemoteAddress = "93.184.216.34",
+            RemotePort = 80,
+            RemoteHostName = "eu.telemetry.example.com"
+        };
+        var m5 = AutoRuleManager.Match(domainEvt, rules);
+        Assert.NotNull(m5);
+        Assert.Equal("block-domain", m5!.Id);
+
+        // 6. GeoIP Org match
+        var geoEvt = new ConnectionEventDto
+        {
+            ApplicationName = "other.exe",
+            ApplicationPath = @"C:\other.exe",
+            RemoteAddress = "20.1.2.3",
+            RemotePort = 80,
+            GeoLocation = "AU • Microsoft Azure One Ds Collector"
+        };
+        var m6 = AutoRuleManager.Match(geoEvt, rules);
+        Assert.NotNull(m6);
+        Assert.Equal("block-domain", m6!.Id);
+    }
+
+    [Fact]
+    public void AutoRuleManager_PersistsReordersAndBuildsScopedFirewallRules()
+    {
+        var tmpFile = Path.Combine(Path.GetTempPath(), $"firebrick_autorules_{Guid.NewGuid():N}.json");
+        try
+        {
+            var mgr = new AutoRuleManager(tmpFile);
+            var r1 = new AutoRuleDto
+            {
+                Id = "r1",
+                Name = "Allow VS Code",
+                MatchField = AutoRuleMatchField.AppNameOrPath,
+                Pattern = @"*VSCode*\Code.exe",
+                Action = RuleAction.Allow,
+                TriggerMode = AutoRuleTriggerMode.Instant,
+                RuleScope = AutoRuleScope.IpAndPort,
+                TemporaryMinutes = 15
+            };
+            var r2 = new AutoRuleDto
+            {
+                Id = "r2",
+                Name = "Block Telemetry",
+                MatchField = AutoRuleMatchField.IpOrCidr,
+                Pattern = "40.79.167.9",
+                Action = RuleAction.Block,
+                TriggerMode = AutoRuleTriggerMode.Countdown,
+                CountdownSeconds = 8
+            };
+
+            mgr.Upsert(r1);
+            mgr.Upsert(r2);
+            Assert.True(mgr.Move("r2", -1));
+            mgr.RecordHit("r2");
+
+            // Reload from disk
+            var reloaded = new AutoRuleManager(tmpFile);
+            var list = reloaded.GetAll();
+            Assert.Equal(2, list.Count);
+            Assert.Equal("r2", list[0].Id);
+            Assert.Equal(1, list[0].HitCount);
+            Assert.NotNull(list[0].LastMatchedUtc);
+
+            // BuildFirewallRule respects scope, temp duration, and Auto-Rule tagging
+            var evt = new ConnectionEventDto
+            {
+                ApplicationName = "Code.exe",
+                ApplicationPath = @"C:\Users\Dev\VSCode\Code.exe",
+                Protocol = "TCP",
+                RemoteAddress = "140.82.114.4",
+                RemotePort = 443
+            };
+            var fwRule = AutoRuleManager.BuildFirewallRule(r1, evt);
+            Assert.Equal(RuleAction.Allow, fwRule.Action);
+            Assert.Equal("443", fwRule.RemotePorts);
+            Assert.Equal("140.82.114.4", fwRule.RemoteAddresses);
+            Assert.True(fwRule.IsTemporary);
+            Assert.NotNull(fwRule.ExpiresAtUtc);
+            Assert.Contains("Auto-Rule: Allow VS Code", fwRule.Description);
+        }
+        finally
+        {
+            if (File.Exists(tmpFile)) File.Delete(tmpFile);
         }
     }
 

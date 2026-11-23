@@ -9,6 +9,7 @@ namespace FireBrick.App.Pages;
 
 public sealed partial class ProtectionPage : Page
 {
+    private readonly ObservableCollection<AutoRuleDto> _autoRules = new();
     private readonly ObservableCollection<RuleLockAlertDto> _lockAlerts = new();
     private readonly ObservableCollection<NetworkProfileRuleDto> _networkRules = new();
     private readonly ObservableCollection<BlocklistSubscriptionDto> _blocklists = new();
@@ -18,10 +19,41 @@ public sealed partial class ProtectionPage : Page
     public ProtectionPage()
     {
         InitializeComponent();
+        AutoRulesList.ItemsSource = _autoRules;
         RuleLockAlertsList.ItemsSource = _lockAlerts;
         NetworkRulesList.ItemsSource = _networkRules;
         BlocklistsList.ItemsSource = _blocklists;
-        Loaded += async (_, _) => await LoadAsync();
+        Loaded += async (_, _) =>
+        {
+            FirewallBackendService.Instance.AutoRulesChanged += OnAutoRulesChanged;
+            await LoadAsync();
+        };
+        Unloaded += (_, _) =>
+        {
+            FirewallBackendService.Instance.AutoRulesChanged -= OnAutoRulesChanged;
+        };
+    }
+
+    private void OnAutoRulesChanged(object? sender, EventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(async () => await ReloadAutoRulesAsync());
+    }
+
+    private async Task ReloadAutoRulesAsync()
+    {
+        _loading = true;
+        try
+        {
+            var autoRules = await FirewallBackendService.Instance.GetAutoRulesAsync();
+            _autoRules.Clear();
+            foreach (var r in autoRules) _autoRules.Add(r);
+            EmptyAutoRulesText.Visibility = _autoRules.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        catch { }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task LoadAsync()
@@ -53,6 +85,11 @@ public sealed partial class ProtectionPage : Page
             _lockAlerts.Clear();
             foreach (var a in alerts) _lockAlerts.Add(a);
             RuleLockEmptyText.Visibility = _lockAlerts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            var autoRules = await FirewallBackendService.Instance.GetAutoRulesAsync();
+            _autoRules.Clear();
+            foreach (var r in autoRules) _autoRules.Add(r);
+            EmptyAutoRulesText.Visibility = _autoRules.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (Exception ex)
         {
@@ -242,6 +279,264 @@ public sealed partial class ProtectionPage : Page
         {
             ShowInfo(InfoBarSeverity.Error, "Remove Failed", ex.Message);
         }
+    }
+
+    private async void AddAutoRule_Click(object sender, RoutedEventArgs e)
+    {
+        await ShowAutoRuleDialogAsync(null);
+    }
+
+    private async void EditAutoRule_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        var existing = _autoRules.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (existing == null) return;
+        await ShowAutoRuleDialogAsync(existing);
+    }
+
+    private async void AutoRuleEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (sender is not ToggleSwitch sw || sw.Tag is not string id) return;
+
+        var list = await FirewallBackendService.Instance.GetAutoRulesAsync();
+        var item = list.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (item == null || item.Enabled == sw.IsOn) return;
+
+        item.Enabled = sw.IsOn;
+        await FirewallBackendService.Instance.SaveAutoRulesAsync(list);
+    }
+
+    private async void MoveAutoRuleUp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        await MoveAutoRuleAsync(id, -1);
+    }
+
+    private async void MoveAutoRuleDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        await MoveAutoRuleAsync(id, +1);
+    }
+
+    private async Task MoveAutoRuleAsync(string id, int delta)
+    {
+        var list = await FirewallBackendService.Instance.GetAutoRulesAsync();
+        int idx = list.FindIndex(r => string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase));
+        int target = idx + delta;
+        if (idx < 0 || target < 0 || target >= list.Count) return;
+
+        (list[idx], list[target]) = (list[target], list[idx]);
+        await FirewallBackendService.Instance.SaveAutoRulesAsync(list);
+        await ReloadAutoRulesAsync();
+    }
+
+    private async void DeleteAutoRule_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        var list = await FirewallBackendService.Instance.GetAutoRulesAsync();
+        if (list.RemoveAll(r => string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase)) > 0)
+        {
+            await FirewallBackendService.Instance.SaveAutoRulesAsync(list);
+            await ReloadAutoRulesAsync();
+            ShowInfo(InfoBarSeverity.Informational, "Auto-Rule Deleted", "Removed the auto-rule from FireBrick.");
+        }
+    }
+
+    private async Task ShowAutoRuleDialogAsync(AutoRuleDto? existing)
+    {
+        bool isEdit = existing != null;
+
+        var nameBox = new TextBox
+        {
+            Header = "Rule Name (optional)",
+            Text = existing?.Name ?? string.Empty,
+            PlaceholderText = "e.g. Allow Microsoft Apps or Block Copilot"
+        };
+
+        var matchFieldCombo = new ComboBox
+        {
+            Header = "Match Criterion",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        matchFieldCombo.Items.Add("App Name / Path");
+        matchFieldCombo.Items.Add("Publisher (Authenticode)");
+        matchFieldCombo.Items.Add("IP Address / CIDR");
+        matchFieldCombo.Items.Add("Domain / Hostname / Org");
+        matchFieldCombo.SelectedIndex = (int)(existing?.MatchField ?? AutoRuleMatchField.Publisher);
+
+        var patternBox = new TextBox
+        {
+            Header = "Pattern (supports * and ? wildcards; comma-separate multiple)",
+            Text = existing?.Pattern ?? string.Empty
+        };
+
+        var trustedOnlyCheck = new CheckBox
+        {
+            Content = "Require valid Trusted Authenticode signature (recommended)",
+            IsChecked = existing?.RequireTrustedSignature ?? true
+        };
+
+        var actionCombo = new ComboBox
+        {
+            Header = "Action",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        actionCombo.Items.Add("Allow");
+        actionCombo.Items.Add("Block");
+        actionCombo.SelectedIndex = existing?.Action == RuleAction.Block ? 1 : 0;
+
+        var triggerCombo = new ComboBox
+        {
+            Header = "Execution Mode",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        triggerCombo.Items.Add("Instantaneous (silent, no notification shown)");
+        triggerCombo.Items.Add("Countdown (show alert with cancel/override)");
+        triggerCombo.SelectedIndex = existing?.TriggerMode == AutoRuleTriggerMode.Countdown ? 1 : 0;
+
+        var countdownBox = new NumberBox
+        {
+            Header = "Countdown Duration (seconds)",
+            Minimum = 2,
+            Maximum = 60,
+            Value = existing?.CountdownSeconds ?? 5,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        var scopeCombo = new ComboBox
+        {
+            Header = "Generated Firewall Rule Scope",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        scopeCombo.Items.Add("Any IP & port");
+        scopeCombo.Items.Add("Port only");
+        scopeCombo.Items.Add("IP & port");
+        scopeCombo.SelectedIndex = (int)(existing?.RuleScope ?? AutoRuleScope.Any);
+
+        var durationCombo = new ComboBox
+        {
+            Header = "Generated Firewall Rule Duration",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        durationCombo.Items.Add("Permanent");
+        durationCombo.Items.Add("Temporary — 5 minutes");
+        durationCombo.Items.Add("Temporary — 15 minutes");
+        durationCombo.Items.Add("Temporary — 1 hour");
+        durationCombo.Items.Add("Temporary — 4 hours");
+        durationCombo.SelectedIndex = existing?.TemporaryMinutes switch
+        {
+            5 => 1,
+            15 => 2,
+            60 => 3,
+            240 => 4,
+            _ => 0
+        };
+
+        var hintText = new TextBlock
+        {
+            FontSize = 11,
+            Opacity = 0.75,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        void RefreshDynamicFields()
+        {
+            var field = (AutoRuleMatchField)Math.Clamp(matchFieldCombo.SelectedIndex, 0, 3);
+            trustedOnlyCheck.Visibility = field == AutoRuleMatchField.Publisher ? Visibility.Visible : Visibility.Collapsed;
+            countdownBox.Visibility = triggerCombo.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+
+            patternBox.PlaceholderText = field switch
+            {
+                AutoRuleMatchField.AppNameOrPath => @"e.g. *copilot*.exe or C:\Program Files\MyApp\*.exe",
+                AutoRuleMatchField.Publisher => "e.g. Microsoft Corporation",
+                AutoRuleMatchField.IpOrCidr => "e.g. 40.79.0.0/16 or 40.79.167.9:443",
+                AutoRuleMatchField.DomainOrHost => "e.g. *.azure.com, telemetry.microsoft.com, or Microsoft Azure",
+                _ => string.Empty
+            };
+
+            hintText.Text = field switch
+            {
+                AutoRuleMatchField.AppNameOrPath => "Tip: For Auto-Allow rules, prefer a full folder path wildcard (e.g. C:\\Program Files\\Vendor\\*.exe) over a bare filename.",
+                AutoRuleMatchField.Publisher => "Matches the verified digital signature publisher. Keeping 'Require valid Trusted Authenticode signature' enabled prevents spoofing.",
+                AutoRuleMatchField.IpOrCidr => "Supports exact IPv4/IPv6, CIDR ranges (e.g. 10.0.0.0/8), wildcards (40.79.*), and optional :port suffix.",
+                AutoRuleMatchField.DomainOrHost => "Matches against Reverse DNS (PTR) hostnames and GeoIP organization names. Full URLs are automatically trimmed to their hostname.",
+                _ => string.Empty
+            };
+        }
+
+        matchFieldCombo.SelectionChanged += (_, _) => RefreshDynamicFields();
+        triggerCombo.SelectionChanged += (_, _) => RefreshDynamicFields();
+        RefreshDynamicFields();
+
+        var panel = new StackPanel { Spacing = 10, MinWidth = 420 };
+        panel.Children.Add(nameBox);
+        panel.Children.Add(matchFieldCombo);
+        panel.Children.Add(patternBox);
+        panel.Children.Add(trustedOnlyCheck);
+        panel.Children.Add(actionCombo);
+        panel.Children.Add(triggerCombo);
+        panel.Children.Add(countdownBox);
+        panel.Children.Add(scopeCombo);
+        panel.Children.Add(durationCombo);
+        panel.Children.Add(hintText);
+
+        var scroll = new ScrollViewer
+        {
+            Content = panel,
+            MaxHeight = 520,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = isEdit ? "Edit Auto-Rule" : "Add Auto-Rule",
+            Content = scroll,
+            PrimaryButtonText = isEdit ? "Save Changes" : "Create Auto-Rule",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (string.IsNullOrWhiteSpace(patternBox.Text))
+        {
+            ShowInfo(InfoBarSeverity.Warning, "Pattern Required", "Please enter a match pattern for the auto-rule.");
+            return;
+        }
+
+        int? tempMinutes = durationCombo.SelectedIndex switch
+        {
+            1 => 5,
+            2 => 15,
+            3 => 60,
+            4 => 240,
+            _ => null
+        };
+
+        var rule = new AutoRuleDto
+        {
+            Id = existing?.Id ?? Guid.NewGuid().ToString("N"),
+            Name = nameBox.Text.Trim(),
+            Enabled = existing?.Enabled ?? true,
+            MatchField = (AutoRuleMatchField)Math.Clamp(matchFieldCombo.SelectedIndex, 0, 3),
+            Pattern = patternBox.Text.Trim(),
+            RequireTrustedSignature = trustedOnlyCheck.IsChecked ?? true,
+            Action = actionCombo.SelectedIndex == 1 ? RuleAction.Block : RuleAction.Allow,
+            TriggerMode = triggerCombo.SelectedIndex == 1 ? AutoRuleTriggerMode.Countdown : AutoRuleTriggerMode.Instant,
+            CountdownSeconds = double.IsNaN(countdownBox.Value) ? 5 : Math.Clamp((int)Math.Round(countdownBox.Value), 2, 60),
+            RuleScope = (AutoRuleScope)Math.Clamp(scopeCombo.SelectedIndex, 0, 2),
+            TemporaryMinutes = tempMinutes,
+            HitCount = existing?.HitCount ?? 0,
+            LastMatchedUtc = existing?.LastMatchedUtc
+        };
+
+        await FirewallBackendService.Instance.UpsertAutoRuleAsync(rule);
+        await ReloadAutoRulesAsync();
+        ShowInfo(InfoBarSeverity.Success,
+            isEdit ? "Auto-Rule Updated" : "Auto-Rule Created",
+            $"'{(string.IsNullOrWhiteSpace(rule.Name) ? rule.Pattern : rule.Name)}' is now active.");
     }
 
     private void ShowInfo(InfoBarSeverity severity, string title, string message)

@@ -23,7 +23,10 @@ public sealed class FirewallBackendService : IDisposable
     private readonly NetworkProfileMonitor _localNetworkMonitor = new();
     private readonly RuleLockMonitor _localRuleLock = new();
     private readonly BlocklistManager _localBlocklists = new();
+    private readonly AutoRuleManager _localAutoRules = new();
     private readonly SettingsStore _settingsStore = new();
+    private readonly object _autoRulesLock = new();
+    private List<AutoRuleDto> _cachedAutoRules = new();
     private readonly UsageAnalyticsService _analytics;
     private readonly DnsResolverCache _dnsCache = new();
     private readonly GeoIpResolverCache _geoIpCache = new();
@@ -49,6 +52,7 @@ public sealed class FirewallBackendService : IDisposable
     public event EventHandler<FirewallProfileMode>? ProfileModeChanged;
     public event EventHandler<NotificationMode>? NotificationModeChanged;
     public event EventHandler<bool>? ServiceConnectionChanged;
+    public event EventHandler? AutoRulesChanged;
 
     private FirewallBackendService()
     {
@@ -80,6 +84,7 @@ public sealed class FirewallBackendService : IDisposable
             _localAudit.TryStart(loadRecentHistory: true);
         }
 
+        try { await GetAutoRulesAsync().ConfigureAwait(false); } catch { }
         _ = TrackLaunchAnalyticsAsync();
     }
 
@@ -549,6 +554,92 @@ public sealed class FirewallBackendService : IDisposable
         }).ConfigureAwait(false);
     }
 
+    public async Task<List<AutoRuleDto>> GetAutoRulesAsync()
+    {
+        List<AutoRuleDto> list;
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                list = await _ipc.SendAndDeserializeAsync<List<AutoRuleDto>>(IpcCommands.GetAutoRules, null, 2500).ConfigureAwait(false)
+                       ?? new List<AutoRuleDto>();
+                lock (_autoRulesLock) { _cachedAutoRules = list; }
+                return list;
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        list = _localAutoRules.GetAll();
+        lock (_autoRulesLock) { _cachedAutoRules = list; }
+        return list;
+    }
+
+    public async Task SaveAutoRulesAsync(List<AutoRuleDto> rules)
+    {
+        _localAutoRules.SaveAll(rules);
+        var normalized = _localAutoRules.GetAll();
+        lock (_autoRulesLock) { _cachedAutoRules = normalized; }
+
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                await _ipc.SendAsync(IpcCommands.SaveAutoRules, normalized).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        AutoRulesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task UpsertAutoRuleAsync(AutoRuleDto rule)
+    {
+        var current = await GetAutoRulesAsync().ConfigureAwait(false);
+        int idx = current.FindIndex(r => string.Equals(r.Id, rule.Id, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0) current[idx] = rule;
+        else current.Add(rule);
+        await SaveAutoRulesAsync(current).ConfigureAwait(false);
+    }
+
+    public async Task RecordAutoRuleHitAsync(string ruleId)
+    {
+        if (string.IsNullOrWhiteSpace(ruleId)) return;
+
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                await _ipc.SendAsync(IpcCommands.RecordAutoRuleHit, ruleId).ConfigureAwait(false);
+                _ = GetAutoRulesAsync();
+                return;
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        _localAutoRules.RecordHit(ruleId);
+        lock (_autoRulesLock) { _cachedAutoRules = _localAutoRules.GetAll(); }
+        AutoRulesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public AutoRuleDto? MatchAutoRule(ConnectionEventDto evt)
+    {
+        List<AutoRuleDto> snapshot;
+        lock (_autoRulesLock)
+        {
+            snapshot = _cachedAutoRules.Count > 0 ? _cachedAutoRules : _localAutoRules.GetAll();
+        }
+        return AutoRuleManager.Match(evt, snapshot);
+    }
+
     public async Task<bool> EnableAuditPolicyAsync()
     {
         if (await TryUseServiceAsync().ConfigureAwait(false))
@@ -675,6 +766,61 @@ public sealed class FirewallBackendService : IDisposable
         if (!string.IsNullOrWhiteSpace(_selfExecutablePath) &&
             string.Equals(evt.ApplicationPath, _selfExecutablePath, StringComparison.OrdinalIgnoreCase))
             return;
+
+        // Already handled silently by a service-side Instant Auto-Rule
+        if (!string.IsNullOrWhiteSpace(evt.AutoRuleHandled))
+            return;
+
+        // Evaluate user-defined Auto-Rules
+        var matchedAutoRule = MatchAutoRule(evt);
+        if (matchedAutoRule != null)
+        {
+            if (matchedAutoRule.TriggerMode == AutoRuleTriggerMode.Instant)
+            {
+                if (allowLocalAutoRule)
+                {
+                    lock (_notifiedApps)
+                    {
+                        if (!_notifiedApps.Add($"auto|{matchedAutoRule.Id}|{evt.ApplicationPath}|{evt.RemoteEndpoint}"))
+                            return;
+                    }
+                    try
+                    {
+                        var fwRule = AutoRuleManager.BuildFirewallRule(matchedAutoRule, evt);
+                        _localFirewall.CreateRule(fwRule);
+                        if (fwRule.IsTemporary && fwRule.ExpiresAtUtc.HasValue)
+                        {
+                            _localTempRules.Register(new TemporaryRuleDto
+                            {
+                                RuleName = fwRule.Name,
+                                ApplicationPath = fwRule.ExpandedApplicationPath,
+                                Direction = fwRule.Direction,
+                                Action = fwRule.Action,
+                                ExpiresAtUtc = fwRule.ExpiresAtUtc.Value
+                            });
+                        }
+                        if (matchedAutoRule.Action == RuleAction.Block && _settingsStore.Get().KillConnectionsOnBlock)
+                        {
+                            _localTcpKiller.KillConnectionsForExecutable(evt.ApplicationPath);
+                        }
+                        _localAutoRules.RecordHit(matchedAutoRule.Id);
+                        lock (_autoRulesLock) { _cachedAutoRules = _localAutoRules.GetAll(); }
+                        AutoRulesChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                    catch { }
+                }
+                return;
+            }
+
+            // Countdown Auto-Rule: show the alert window so the countdown runs with cancel/override
+            lock (_notifiedApps)
+            {
+                if (!_notifiedApps.Add(evt.ApplicationPath)) return;
+            }
+            _analytics.TrackInterception();
+            BlockedConnectionPromptRequested?.Invoke(this, evt);
+            return;
+        }
 
         var mode = _settingsStore.Get().NotificationMode;
         if (mode == NotificationMode.Disabled) return;

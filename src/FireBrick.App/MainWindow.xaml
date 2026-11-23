@@ -76,7 +76,7 @@
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="Donate" Tag="donate">
+                <NavigationViewItem Content="Donate" Tag="donate" Visibility="Collapsed">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xEB51;" Foreground="#E84855" />
                     </NavigationViewItem.Icon>

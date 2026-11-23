@@ -13,6 +13,7 @@ namespace FireBrick.App.Pages;
 public sealed partial class DashboardPage : Page
 {
     private bool _isLoading;
+    private CancellationTokenSource? _toastDismissCts;
 
     public DashboardPage()
     {
@@ -32,6 +33,9 @@ public sealed partial class DashboardPage : Page
     {
         FirewallBackendService.Instance.ProfileModeChanged -= OnExternalStateChanged;
         FirewallBackendService.Instance.NotificationModeChanged -= OnExternalNotifChanged;
+        _toastDismissCts?.Cancel();
+        _toastDismissCts?.Dispose();
+        _toastDismissCts = null;
     }
 
     private void OnExternalStateChanged(object? sender, FirewallProfileMode mode)
@@ -52,18 +56,37 @@ public sealed partial class DashboardPage : Page
             var statusTask = FirewallBackendService.Instance.GetStatusAsync();
             var eventsTask = FirewallBackendService.Instance.GetRecentEventsAsync();
             var rulesTask = FirewallBackendService.Instance.GetRulesAsync();
-            await Task.WhenAll(statusTask, eventsTask, rulesTask);
+            var liveTask = FirewallBackendService.Instance.GetActiveConnectionsAsync();
+            var netTask = FirewallBackendService.Instance.GetCurrentNetworkNameAsync();
+            var tempTask = FirewallBackendService.Instance.GetTemporaryRulesAsync();
+            var lockAlertsTask = FirewallBackendService.Instance.GetRuleLockAlertsAsync();
+            await Task.WhenAll(statusTask, eventsTask, rulesTask, liveTask, netTask, tempTask, lockAlertsTask);
 
             var status = statusTask.Result;
             var recentEvents = eventsTask.Result;
             var currentRules = rulesTask.Result;
+            var activeConns = liveTask.Result;
+            var currentNetwork = netTask.Result;
+            var tempRules = tempTask.Result;
+            var lockAlerts = lockAlertsTask.Result;
+            var settings = FirewallBackendService.Instance.GetSettings();
 
-            var buckets = AppAggregator.BuildActivityBuckets(recentEvents, bucketCount: 12, maxHeight: 62);
-            ActivityChartItems.ItemsSource = buckets;
+            // Live Active Apps
+            var liveApps = AppAggregator.BuildLiveActiveApps(activeConns, topCount: 6);
+            LiveActiveAppsList.ItemsSource = liveApps;
+            EmptyLiveAppsText.Visibility = liveApps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            int uniqueLiveApps = activeConns
+                .Where(c => !string.IsNullOrWhiteSpace(c.ProcessPath) || !string.IsNullOrWhiteSpace(c.ProcessName))
+                .Select(c => !string.IsNullOrWhiteSpace(c.ProcessPath) ? c.ProcessPath.Trim() : c.ProcessName.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            LiveSocketsBadgeText.Text = $"{activeConns.Count} sockets • {uniqueLiveApps} apps";
 
-            var topBlocked = AppAggregator.BuildTopBlockedApps(recentEvents, currentRules, topCount: 5, maxBarWidth: 160);
-            TopBlockedList.ItemsSource = topBlocked;
-            EmptyTopBlockedText.Visibility = topBlocked.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            // Recent Blocked Connections Feed
+            var recentBlocked = AppAggregator.BuildRecentBlockedFeed(recentEvents, currentRules, maxCount: 6);
+            RecentBlockedList.ItemsSource = recentBlocked;
+            EmptyRecentBlockedText.Visibility = recentBlocked.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            RecentBlockedSummaryText.Text = recentBlocked.Count > 0 ? $"Showing latest {recentBlocked.Count}" : string.Empty;
 
             EnabledRulesText.Text = status.EnabledRulesCount.ToString("N0");
             TotalRulesSubText.Text = $"of {status.TotalRulesCount:N0} total rules";
@@ -71,10 +94,29 @@ public sealed partial class DashboardPage : Page
             TempRulesText.Text = status.TemporaryRulesCount.ToString("N0");
             InvalidRulesText.Text = status.InvalidRulesCount.ToString("N0");
             CleanupInvalidLink.Visibility = status.InvalidRulesCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+            NoInvalidRulesText.Visibility = status.InvalidRulesCount == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             var onBrush = new SolidColorBrush(Color.FromArgb(255, 16, 185, 129));
             var offBrush = new SolidColorBrush(Color.FromArgb(255, 156, 163, 175));
             var warnBrush = new SolidColorBrush(Color.FromArgb(255, 245, 158, 11));
+            var lockBrush = new SolidColorBrush(Color.FromArgb(255, 59, 130, 246));
+            var dangerBrush = new SolidColorBrush(Color.FromArgb(255, 239, 68, 68));
+
+            bool anyProfileOn = status.DomainFirewallEnabled || status.PrivateFirewallEnabled || status.PublicFirewallEnabled;
+            (string headline, SolidColorBrush shieldFg, Color shieldBg) = status.ProfileMode switch
+            {
+                FirewallProfileMode.HighFiltering when anyProfileOn =>
+                    ("Firewall Active — High Filtering (Lockdown)", lockBrush, Color.FromArgb(36, 59, 130, 246)),
+                FirewallProfileMode.MediumFiltering when anyProfileOn =>
+                    ("Firewall Active — Medium Filtering", onBrush, Color.FromArgb(36, 16, 185, 129)),
+                FirewallProfileMode.LowFiltering when anyProfileOn =>
+                    ("Firewall Active — Low Filtering", warnBrush, Color.FromArgb(36, 245, 158, 11)),
+                _ =>
+                    ("Firewall Disabled — No Filtering", dangerBrush, Color.FromArgb(36, 239, 68, 68))
+            };
+            FirewallHeadlineText.Text = headline;
+            StatusShieldIcon.Foreground = shieldFg;
+            StatusShieldBadge.Background = new SolidColorBrush(shieldBg);
 
             DomainDot.Fill = status.DomainFirewallEnabled ? onBrush : offBrush;
             DomainPillText.Text = $"Domain: {(status.DomainFirewallEnabled ? "ON" : "OFF")}";
@@ -87,6 +129,80 @@ public sealed partial class DashboardPage : Page
 
             AuditDot.Fill = status.IsAuditPolicyEnabled ? onBrush : warnBrush;
             AuditPillText.Text = $"WFP Auditing: {(status.IsAuditPolicyEnabled ? "Enabled" : "Off")}";
+
+            // Security Posture & Rule Health
+            CurrentNetworkText.Text = string.IsNullOrWhiteSpace(currentNetwork) ? "Disconnected" : currentNetwork;
+
+            if (settings.EnableRuleLock)
+            {
+                RuleLockDot.Fill = lockAlerts.Count > 0 ? warnBrush : onBrush;
+                RuleLockStatusText.Text = lockAlerts.Count > 0 ? $"Active ({lockAlerts.Count} alerts)" : "Active";
+            }
+            else
+            {
+                RuleLockDot.Fill = offBrush;
+                RuleLockStatusText.Text = "Off";
+            }
+
+            var enabledBlocklists = settings.Blocklists.Where(b => b.Enabled).ToList();
+            if (enabledBlocklists.Count > 0)
+            {
+                int totalTargets = enabledBlocklists.Sum(b => b.RuleEntryCount);
+                BlocklistDot.Fill = onBrush;
+                BlocklistStatusText.Text = totalTargets > 0
+                    ? $"{enabledBlocklists.Count} active ({totalTargets:N0} targets)"
+                    : $"{enabledBlocklists.Count} active";
+            }
+            else
+            {
+                BlocklistDot.Fill = offBrush;
+                BlocklistStatusText.Text = "None enabled";
+            }
+
+            int enabledNetRules = settings.NetworkProfileRules.Count(r => r.Enabled);
+            if (settings.AutoSwitchNetworkProfiles && enabledNetRules > 0)
+            {
+                NetSwitchDot.Fill = onBrush;
+                NetSwitchStatusText.Text = $"Active ({enabledNetRules} rules)";
+            }
+            else
+            {
+                NetSwitchDot.Fill = offBrush;
+                NetSwitchStatusText.Text = enabledNetRules > 0 ? "Paused" : "Off";
+            }
+
+            if (tempRules.Count > 0)
+            {
+                var soonest = tempRules.OrderBy(t => t.ExpiresAtUtc).First();
+                TempRulesDot.Fill = new SolidColorBrush(Color.FromArgb(255, 224, 90, 43));
+                TempRulesStatusText.Text = $"{tempRules.Count} active (next: {soonest.RemainingDisplay})";
+            }
+            else
+            {
+                TempRulesDot.Fill = offBrush;
+                TempRulesStatusText.Text = "None active";
+            }
+
+            int outCount = currentRules.Count(r => r.Enabled && r.Direction == RuleDirection.Outbound);
+            int inCount = currentRules.Count(r => r.Enabled && r.Direction == RuleDirection.Inbound);
+            int allowCount = currentRules.Count(r => r.Enabled && r.Action == RuleAction.Allow);
+            int blockCount = currentRules.Count(r => r.Enabled && r.Action == RuleAction.Block);
+            RuleBreakdownText.Text = $"{outCount:N0} Out / {inCount:N0} In  ({allowCount:N0} Allow, {blockCount:N0} Block)";
+
+            int dupGroups = WindowsFirewallManager.FindDuplicateRules(currentRules).Count;
+            if (dupGroups == 0 && status.InvalidRulesCount == 0)
+            {
+                RuleHealthDot.Fill = onBrush;
+                RuleHealthText.Text = "All clean";
+            }
+            else
+            {
+                RuleHealthDot.Fill = warnBrush;
+                var healthParts = new List<string>(2);
+                if (dupGroups > 0) healthParts.Add($"{dupGroups} duplicate groups");
+                if (status.InvalidRulesCount > 0) healthParts.Add($"{status.InvalidRulesCount} invalid");
+                RuleHealthText.Text = string.Join(" • ", healthParts);
+            }
 
             if (status.IsServiceConnected)
             {
@@ -140,14 +256,14 @@ public sealed partial class DashboardPage : Page
                     if (ok)
                     {
                         await FirewallBackendService.Instance.ReconnectServiceAsync();
-                        ShowBanner(InfoBarSeverity.Success, "FireBrickService Ready", "Background service is installed, running, and configured for automatic recovery.");
+                        ShowToast(InfoBarSeverity.Success, "FireBrickService Ready", "Background service is installed, running, and configured for automatic recovery.");
                         await LoadStatusAsync();
                     }
                     else
                     {
                         actionBtn.IsEnabled = true;
                         actionBtn.Content = label;
-                        ShowBanner(InfoBarSeverity.Warning, "Service Setup Cancelled", "Administrator approval is required once to configure FireBrickService.");
+                        ShowToast(InfoBarSeverity.Warning, "Service Setup Cancelled", "Administrator approval is required once to configure FireBrickService.");
                     }
                 };
 
@@ -192,12 +308,12 @@ public sealed partial class DashboardPage : Page
         try
         {
             await FirewallBackendService.Instance.SetProfileModeAsync(mode);
-            ShowBanner(InfoBarSeverity.Success, "Profile Updated", $"Switched Windows Firewall to {mode}.");
+            ShowToast(InfoBarSeverity.Success, "Profile Updated", $"Switched Windows Firewall to {mode}.");
             await LoadStatusAsync();
         }
         catch (Exception ex)
         {
-            ShowBanner(InfoBarSeverity.Error, "Failed to switch profile", ex.Message);
+            ShowToast(InfoBarSeverity.Error, "Failed to switch profile", ex.Message);
             await LoadStatusAsync();
         }
     }
@@ -211,10 +327,11 @@ public sealed partial class DashboardPage : Page
         try
         {
             await FirewallBackendService.Instance.SetNotificationModeAsync(mode);
+            ShowToast(InfoBarSeverity.Success, "Notification Mode Updated", $"Switched notifications to {mode}.");
         }
         catch (Exception ex)
         {
-            ShowBanner(InfoBarSeverity.Error, "Failed to update notification mode", ex.Message);
+            ShowToast(InfoBarSeverity.Error, "Failed to update notification mode", ex.Message);
         }
     }
 
@@ -223,12 +340,12 @@ public sealed partial class DashboardPage : Page
         try
         {
             int removed = await FirewallBackendService.Instance.CleanupInvalidRulesAsync();
-            ShowBanner(InfoBarSeverity.Success, "Cleanup Complete", $"Removed {removed} invalid/orphaned firewall rules.");
+            ShowToast(InfoBarSeverity.Success, "Cleanup Complete", $"Removed {removed} invalid/orphaned firewall rules.");
             await LoadStatusAsync();
         }
         catch (Exception ex)
         {
-            ShowBanner(InfoBarSeverity.Error, "Cleanup Failed", ex.Message);
+            ShowToast(InfoBarSeverity.Error, "Cleanup Failed", ex.Message);
         }
     }
 
@@ -243,27 +360,70 @@ public sealed partial class DashboardPage : Page
         }
         catch (Exception ex)
         {
-            ShowBanner(InfoBarSeverity.Error, "Elevation Cancelled", ex.Message);
+            ShowToast(InfoBarSeverity.Error, "Elevation Cancelled", ex.Message);
         }
     }
 
-    private async void QuickAllowTopApp_Click(object sender, RoutedEventArgs e)
+    private async void QuickBlockLiveApp_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not string appPath || string.IsNullOrWhiteSpace(appPath)) return;
+        btn.IsEnabled = false;
+        btn.Content = "Blocking...";
+        try
+        {
+            var rule = await FirewallBackendService.Instance.CreateQuickRuleAsync(appPath, RuleAction.Block, RuleDirection.Outbound);
+            btn.Content = "Blocked";
+            ShowToast(InfoBarSeverity.Success, "Application Blocked", $"Blocked '{rule.ApplicationDisplay}' outbound.");
+            await LoadStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            btn.IsEnabled = true;
+            btn.Content = "Block";
+            ShowToast(InfoBarSeverity.Error, "Failed to block app", ex.Message);
+        }
+    }
+
+    private async void QuickAllowRecent_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not RecentBlockedItemDto item || string.IsNullOrWhiteSpace(item.ApplicationPath)) return;
         btn.IsEnabled = false;
         btn.Content = "Allowing...";
         try
         {
-            var rule = await FirewallBackendService.Instance.CreateQuickRuleAsync(appPath, RuleAction.Allow, RuleDirection.Outbound);
+            var rule = await FirewallBackendService.Instance.CreateQuickRuleAsync(item.ApplicationPath, RuleAction.Allow, item.Direction);
             btn.Content = "Allowed ✓";
-            ShowBanner(InfoBarSeverity.Success, "Rule Created", $"Allowed '{rule.ApplicationDisplay}' outbound.");
-            await LoadStatusAsync(preserveBanner: true);
+            var dirLabel = item.Direction == RuleDirection.Inbound ? "inbound" : "outbound";
+            ShowToast(InfoBarSeverity.Success, "Rule Created", $"Allowed '{rule.ApplicationDisplay}' {dirLabel}.");
+            await LoadStatusAsync();
         }
         catch (Exception ex)
         {
             btn.IsEnabled = true;
             btn.Content = "Allow";
-            ShowBanner(InfoBarSeverity.Error, "Failed to allow app", ex.Message);
+            ShowToast(InfoBarSeverity.Error, "Failed to allow app", ex.Message);
+        }
+    }
+
+    private async void QuickTempAllowRecent_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not RecentBlockedItemDto item || string.IsNullOrWhiteSpace(item.ApplicationPath)) return;
+        int mins = Math.Clamp(FirewallBackendService.Instance.GetSettings().DefaultTempRuleMinutes, 1, 1440);
+        btn.IsEnabled = false;
+        btn.Content = "Allowing...";
+        try
+        {
+            var rule = await FirewallBackendService.Instance.CreateQuickRuleAsync(item.ApplicationPath, RuleAction.Allow, item.Direction, temporaryMinutes: mins);
+            btn.Content = $"{mins}m ✓";
+            var dirLabel = item.Direction == RuleDirection.Inbound ? "inbound" : "outbound";
+            ShowToast(InfoBarSeverity.Success, "Temporary Rule Created", $"Allowed '{rule.ApplicationDisplay}' {dirLabel} for {mins} minute(s).");
+            await LoadStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            btn.IsEnabled = true;
+            btn.Content = "Temp";
+            ShowToast(InfoBarSeverity.Error, "Failed to create temporary rule", ex.Message);
         }
     }
 
@@ -283,5 +443,36 @@ public sealed partial class DashboardPage : Page
         StatusBanner.Message = message;
         StatusBanner.ActionButton = actionButton;
         StatusBanner.IsOpen = true;
+    }
+
+    private async void ShowToast(InfoBarSeverity severity, string title, string message, int lingerSeconds = 5)
+    {
+        _toastDismissCts?.Cancel();
+        _toastDismissCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _toastDismissCts = cts;
+
+        ActionToast.Severity = severity;
+        ActionToast.Title = title;
+        ActionToast.Message = message;
+        ActionToast.IsOpen = true;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(lingerSeconds), cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                ActionToast.IsOpen = false;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Replaced by a newer toast or manually dismissed
+        }
+    }
+
+    private void ActionToast_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        _toastDismissCts?.Cancel();
     }
 }

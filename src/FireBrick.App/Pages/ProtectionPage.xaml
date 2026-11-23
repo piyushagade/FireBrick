@@ -9,9 +9,69 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,72">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Protection, Networks &amp; Blocklists" Style="{ThemeResource TitleTextBlockStyle}" />
-                    <TextBlock Text="Auto-switching Wi-Fi/network profiles, domain &amp; IP blocklist subscriptions, and Rule Lock tamper protection." Opacity="0.7" />
+                    <TextBlock Text="Protection, Auto-Rules &amp; Blocklists" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="Automated allow/block policies, Rule Lock tamper protection, auto-switching Wi-Fi profiles, and blocklist subscriptions." Opacity="0.7" />
                 </StackPanel>
+
+            <!-- 0. Auto-Allow & Auto-Block Rules -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Auto-Allow &amp; Auto-Block Rules" FontWeight="SemiBold" FontSize="15" />
+                            <TextBlock Text="Automatically handle blocked connections by app name/path, trusted publisher, IP/CIDR, or domain/host — silently or with a countdown. Evaluated top-to-bottom (first match wins)." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="+ Add Auto-Rule" Style="{ThemeResource AccentButtonStyle}" Click="AddAutoRule_Click" VerticalAlignment="Center" Margin="12,0,0,0" />
+                    </Grid>
+
+                    <TextBlock x:Name="EmptyAutoRulesText" Text="No auto-rules configured yet. Add a rule here or click the lightning icon on any connection alert." FontSize="12" Opacity="0.65" />
+
+                    <ItemsControl x:Name="AutoRulesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:AutoRuleDto">
+                                <Border Margin="0,0,0,6" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="12,8">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0" CornerRadius="4" Padding="7,3" VerticalAlignment="Center" Background="{StaticResource FireBrickMutedBadgeBg}">
+                                            <TextBlock Text="{x:Bind ActionDisplay}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource FireBrickAccentBrush}" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{x:Bind SummaryDisplay}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                            <ToggleSwitch IsOn="{x:Bind Enabled}" Tag="{x:Bind Id}" MinWidth="0" OnContent="" OffContent="" Toggled="AutoRuleEnabled_Toggled" Margin="0,0,4,0" />
+                                            <Button Padding="6,5" Tag="{x:Bind Id}" Click="MoveAutoRuleUp_Click" ToolTipService.ToolTip="Move higher priority">
+                                                <FontIcon Glyph="&#xE70E;" FontSize="11" />
+                                            </Button>
+                                            <Button Padding="6,5" Tag="{x:Bind Id}" Click="MoveAutoRuleDown_Click" ToolTipService.ToolTip="Move lower priority">
+                                                <FontIcon Glyph="&#xE70D;" FontSize="11" />
+                                            </Button>
+                                            <Button Padding="6,5" Tag="{x:Bind Id}" Click="EditAutoRule_Click" ToolTipService.ToolTip="Edit auto-rule">
+                                                <FontIcon Glyph="&#xE70F;" FontSize="11" />
+                                            </Button>
+                                            <Button Padding="6,5" Tag="{x:Bind Id}" Click="DeleteAutoRule_Click" ToolTipService.ToolTip="Delete auto-rule">
+                                                <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="#EF4444" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
 
             <!-- 1. Rule Lock & Tamper Protection -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">

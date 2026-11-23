@@ -5,9 +5,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="FireBrick Alert">
 
-    <Grid x:Name="RootGrid" RowSpacing="10" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+    <Grid x:Name="RootGrid" RowSpacing="10" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" PointerEntered="RootGrid_PointerEntered" PointerExited="RootGrid_PointerExited">
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -41,8 +42,25 @@
             </Button>
         </Grid>
 
+        <!-- Auto-Rule Countdown Banner (visible only when a Countdown Auto-Rule matches) -->
+        <Border x:Name="CountdownBannerBorder" Grid.Row="1" Margin="14,0,14,0" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="10,6" Visibility="Collapsed">
+            <StackPanel Spacing="5">
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon x:Name="CountdownIcon" Grid.Column="0" Glyph="&#xE916;" FontSize="13" Foreground="{StaticResource FireBrickAccentBrush}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="CountdownStatusText" Grid.Column="1" Text="Auto-Allowing in 5s..." FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="Cancel" Padding="8,2" FontSize="11" Click="CancelCountdown_Click" />
+                </Grid>
+                <ProgressBar x:Name="CountdownProgressBar" Minimum="0" Maximum="100" Value="100" Height="3" />
+            </StackPanel>
+        </Border>
+
         <!-- Condensed Alert Content -->
-        <Grid x:Name="CondensedContentPanel" Grid.Row="1" Padding="12,0,12,10" ColumnSpacing="10" Visibility="Collapsed" VerticalAlignment="Center">
+        <Grid x:Name="CondensedContentPanel" Grid.Row="2" Padding="12,0,12,10" ColumnSpacing="10" Visibility="Collapsed" VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -92,7 +110,7 @@
         </Grid>
 
         <!-- Expanded Alert Content -->
-        <StackPanel x:Name="ExpandedContentPanel" Grid.Row="1" Padding="16,0,16,0" Spacing="10">
+        <StackPanel x:Name="ExpandedContentPanel" Grid.Row="2" Padding="16,0,16,0" Spacing="10">
 
             <!-- Application & Trust Card -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
@@ -123,12 +141,23 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock x:Name="AppPathText" Text="C:\Path\To\App.exe" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                         <Button Grid.Column="1" Padding="6,4" Click="OpenLocation_Click" ToolTipService.ToolTip="Open file location in Explorer">
                             <FontIcon Glyph="&#xE838;" FontSize="11" />
                         </Button>
-                        <Button Grid.Column="2" Padding="6,4" Click="CopyPath_Click" ToolTipService.ToolTip="Copy executable path">
+                        <Button x:Name="SearchWebButton" Grid.Column="2" Padding="6,4" Click="SearchWeb_Click" ToolTipService.ToolTip="Search online for this application (right-click to switch search engine)">
+                            <Button.ContextFlyout>
+                                <MenuFlyout Placement="TopEdgeAlignedRight">
+                                    <MenuFlyoutItem Text="Search with Google" Tag="Google" Click="SearchWebWithEngine_Click" />
+                                    <MenuFlyoutItem Text="Search with Bing" Tag="Bing" Click="SearchWebWithEngine_Click" />
+                                    <MenuFlyoutItem Text="Search with DuckDuckGo" Tag="DuckDuckGo" Click="SearchWebWithEngine_Click" />
+                                </MenuFlyout>
+                            </Button.ContextFlyout>
+                            <FontIcon Glyph="&#xE721;" FontSize="11" />
+                        </Button>
+                        <Button Grid.Column="3" Padding="6,4" Click="CopyPath_Click" ToolTipService.ToolTip="Copy executable path">
                             <FontIcon Glyph="&#xE8C8;" FontSize="11" />
                         </Button>
                     </Grid>
@@ -158,11 +187,12 @@
                 </Grid>
             </Border>
 
-            <!-- Rule Scope Selector -->
-            <Grid ColumnSpacing="10">
+            <!-- Rule Scope Selector + Quick Auto-Rule Creator -->
+            <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="Rule Scope:" FontSize="12" Opacity="0.8" VerticalAlignment="Center" />
                 <ComboBox x:Name="ScopeCombo" Grid.Column="1" HorizontalAlignment="Stretch" SelectedIndex="0">
@@ -170,11 +200,14 @@
                     <ComboBoxItem x:Name="ScopePortItem" Content="Port only" Tag="PortOnly" />
                     <ComboBoxItem x:Name="ScopeIpPortItem" Content="IP &amp; port" Tag="IpAndPort" />
                 </ComboBox>
+                <Button x:Name="AutoRuleQuickButton" Grid.Column="2" Padding="8,7" ToolTipService.ToolTip="Create Auto-Rule from this connection" Click="AutoRuleQuickButton_Click">
+                    <FontIcon Glyph="&#xE945;" FontSize="13" Foreground="{StaticResource FireBrickAccentBrush}" />
+                </Button>
             </Grid>
         </StackPanel>
 
         <!-- Action Footer -->
-        <Border x:Name="ExpandedFooterBorder" Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+        <Border x:Name="ExpandedFooterBorder" Grid.Row="3" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="16,12">
             <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />

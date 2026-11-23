@@ -28,8 +28,12 @@ public sealed class FireBrickWorker : BackgroundService
     private readonly NetworkProfileMonitor _networkMonitor;
     private readonly RuleLockMonitor _ruleLock;
     private readonly BlocklistManager _blocklists;
+    private readonly AutoRuleManager _autoRules;
+    private readonly DnsResolverCache _dnsCache;
+    private readonly GeoIpResolverCache _geoIpCache;
     private readonly SettingsStore _settings;
     private readonly HashSet<string> _learningAutoAllowed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _autoRuleAppliedKeys = new(StringComparer.OrdinalIgnoreCase);
     private string _lastNetworkName = string.Empty;
 
     public FireBrickWorker(
@@ -42,6 +46,9 @@ public sealed class FireBrickWorker : BackgroundService
         NetworkProfileMonitor networkMonitor,
         RuleLockMonitor ruleLock,
         BlocklistManager blocklists,
+        AutoRuleManager autoRules,
+        DnsResolverCache dnsCache,
+        GeoIpResolverCache geoIpCache,
         SettingsStore settings)
     {
         _logger = logger;
@@ -53,6 +60,9 @@ public sealed class FireBrickWorker : BackgroundService
         _networkMonitor = networkMonitor;
         _ruleLock = ruleLock;
         _blocklists = blocklists;
+        _autoRules = autoRules;
+        _dnsCache = dnsCache;
+        _geoIpCache = geoIpCache;
         _settings = settings;
     }
 
@@ -131,12 +141,39 @@ public sealed class FireBrickWorker : BackgroundService
         if (evt.Action != RuleAction.Block || evt.Direction != RuleDirection.Outbound)
             return;
 
+        if (string.IsNullOrWhiteSpace(evt.ApplicationPath) ||
+            evt.ApplicationPath.Trim() == "-" ||
+            (evt.EventId == 5152 && evt.ProcessId == 0))
+            return;
+
+        // 1. Evaluate user-defined Auto-Rules first
+        var matchedAutoRule = _autoRules.Match(evt);
+        if (matchedAutoRule != null)
+        {
+            if (matchedAutoRule.TriggerMode == AutoRuleTriggerMode.Instant)
+            {
+                ApplyInstantAutoRule(matchedAutoRule, evt);
+                return;
+            }
+            // Countdown rules are handled interactively by the UI alert window
+            return;
+        }
+
+        // If Domain/Host auto-rules exist and destination hostname/GeoIP isn't resolved yet,
+        // resolve asynchronously in the background and apply if an Instant rule matches.
+        if (_autoRules.HasEnabledDomainRules() &&
+            !string.IsNullOrWhiteSpace(evt.RemoteAddress) &&
+            string.IsNullOrWhiteSpace(evt.RemoteHostName) &&
+            string.IsNullOrWhiteSpace(evt.GeoLocation))
+        {
+            _ = EvaluateDomainAutoRuleAsync(evt);
+        }
+
         var mode = _settings.Get().NotificationMode;
         if (mode != NotificationMode.LearningMode)
             return;
 
-        if (string.IsNullOrWhiteSpace(evt.ApplicationPath) ||
-            evt.SignatureStatus != SignatureTrustStatus.Trusted)
+        if (evt.SignatureStatus != SignatureTrustStatus.Trusted)
             return;
 
         lock (_learningAutoAllowed)
@@ -153,6 +190,81 @@ public sealed class FireBrickWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Learning Mode failed to create rule for {App}", evt.ApplicationPath);
+        }
+    }
+
+    private async Task EvaluateDomainAutoRuleAsync(ConnectionEventDto evt)
+    {
+        try
+        {
+            var dnsTask = _dnsCache.ResolveAsync(evt.RemoteAddress);
+            var geoTask = _geoIpCache.ResolveAsync(evt.RemoteAddress);
+            await Task.WhenAll(dnsTask, geoTask).ConfigureAwait(false);
+
+            evt.RemoteHostName = dnsTask.Result;
+            evt.GeoLocation = geoTask.Result.DisplaySummary;
+
+            var matched = _autoRules.Match(evt);
+            if (matched != null && matched.TriggerMode == AutoRuleTriggerMode.Instant)
+            {
+                ApplyInstantAutoRule(matched, evt);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Background domain auto-rule evaluation failed for {Ip}", evt.RemoteAddress);
+        }
+    }
+
+    private void ApplyInstantAutoRule(AutoRuleDto autoRule, ConnectionEventDto evt)
+    {
+        evt.AutoRuleHandled = autoRule.Name;
+
+        var dedupKey = autoRule.RuleScope switch
+        {
+            AutoRuleScope.IpAndPort => $"{autoRule.Id}|{evt.ApplicationPath}|{evt.RemoteEndpoint}",
+            AutoRuleScope.PortOnly => $"{autoRule.Id}|{evt.ApplicationPath}|{evt.Protocol}:{evt.RemotePort}",
+            _ => $"{autoRule.Id}|{evt.ApplicationPath}"
+        };
+
+        lock (_autoRuleAppliedKeys)
+        {
+            if (!_autoRuleAppliedKeys.Add(dedupKey))
+                return;
+            if (_autoRuleAppliedKeys.Count > 2000)
+                _autoRuleAppliedKeys.Clear();
+        }
+
+        try
+        {
+            var fwRule = AutoRuleManager.BuildFirewallRule(autoRule, evt);
+            _firewall.CreateRule(fwRule);
+            _ruleLock.NotifyAuthorizedRuleAdded(fwRule.Name);
+
+            if (fwRule.IsTemporary && fwRule.ExpiresAtUtc.HasValue)
+            {
+                _tempRules.Register(new TemporaryRuleDto
+                {
+                    RuleName = fwRule.Name,
+                    ApplicationPath = fwRule.ExpandedApplicationPath,
+                    Direction = fwRule.Direction,
+                    Action = fwRule.Action,
+                    ExpiresAtUtc = fwRule.ExpiresAtUtc.Value
+                });
+            }
+
+            if (autoRule.Action == RuleAction.Block && _settings.Get().KillConnectionsOnBlock)
+            {
+                _tcpKiller.KillConnectionsForExecutable(evt.ApplicationPath);
+            }
+
+            _autoRules.RecordHit(autoRule.Id);
+            _logger.LogInformation("Instant Auto-Rule '{Rule}' ({Action}) applied to {App} -> {Endpoint}",
+                autoRule.Name, autoRule.Action, evt.ApplicationPath, evt.RemoteEndpoint);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Instant Auto-Rule '{Rule}' failed for {App}", autoRule.Name, evt.ApplicationPath);
         }
     }
 
@@ -431,6 +543,25 @@ public sealed class FireBrickWorker : BackgroundService
 
                 case IpcCommands.GetCurrentNetworkName:
                     return IpcResponse.Ok(_networkMonitor.GetCurrentNetworkName());
+
+                case IpcCommands.GetAutoRules:
+                    return IpcResponse.Ok(_autoRules.GetAll());
+
+                case IpcCommands.SaveAutoRules:
+                {
+                    var rules = JsonSerializer.Deserialize<List<AutoRuleDto>>(req.PayloadJson ?? "[]") ?? new();
+                    _autoRules.SaveAll(rules);
+                    lock (_autoRuleAppliedKeys) { _autoRuleAppliedKeys.Clear(); }
+                    return IpcResponse.Ok();
+                }
+
+                case IpcCommands.RecordAutoRuleHit:
+                {
+                    var id = JsonSerializer.Deserialize<string>(req.PayloadJson ?? "\"\"") ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(id))
+                        _autoRules.RecordHit(id);
+                    return IpcResponse.Ok();
+                }
 
                 default:
                     return IpcResponse.Fail($"Unknown command: {req.Command}");

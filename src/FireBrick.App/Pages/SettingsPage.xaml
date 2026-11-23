@@ -4,8 +4,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="16" MaxWidth="920" HorizontalAlignment="Left" Padding="24,16,28,24">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16" MaxWidth="920" HorizontalAlignment="Left" Padding="24,16,28,24">
             <StackPanel Spacing="4">
                 <TextBlock Text="Settings &amp; System Integration" Style="{ThemeResource TitleTextBlockStyle}" />
                 <TextBlock Text="Configure FireBrick appearance, WFP auditing, Explorer shell integration, and background service." Opacity="0.7" TextWrapping="Wrap" />
@@ -42,6 +43,22 @@
                         <ComboBox x:Name="AlertViewCombo" Grid.Column="1" Width="150" VerticalAlignment="Center" SelectionChanged="AlertViewCombo_SelectionChanged">
                             <ComboBoxItem Content="Expanded" Tag="Expanded" />
                             <ComboBoxItem Content="Condensed" Tag="Condensed" />
+                        </ComboBox>
+                    </Grid>
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="App Lookup Search Engine" FontWeight="SemiBold" />
+                            <TextBlock Text="Search engine used when clicking the lookup button in connection alerts." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ComboBox x:Name="SearchEngineCombo" Grid.Column="1" Width="150" VerticalAlignment="Center" SelectionChanged="SearchEngineCombo_SelectionChanged">
+                            <ComboBoxItem Content="Google" Tag="Google" />
+                            <ComboBoxItem Content="Bing" Tag="Bing" />
+                            <ComboBoxItem Content="DuckDuckGo" Tag="DuckDuckGo" />
                         </ComboBox>
                     </Grid>
                 </StackPanel>
@@ -187,7 +204,6 @@
                         <Button x:Name="UninstallServiceBtn" Content="Uninstall Service" Click="UninstallServiceButton_Click" />
                         <Button Content="Copy Install Command" Click="CopyServiceCommandButton_Click" />
                     </StackPanel>
-                    <InfoBar x:Name="SettingsInfoBar" IsOpen="False" IsClosable="True" Margin="0,4,0,0" />
                 </StackPanel>
             </Border>
 
@@ -213,6 +229,20 @@
                     <TextBlock x:Name="AboutVersionText" FontSize="12" Opacity="0.75" />
                 </StackPanel>
             </Border>
-        </StackPanel>
-    </ScrollViewer>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Floating Bottom-Right Toast -->
+        <Border HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="24,0,28,20"
+                MaxWidth="440"
+                CornerRadius="4"
+                Background="{ThemeResource SolidBackgroundFillColorTertiaryBrush}">
+            <InfoBar x:Name="SettingsInfoBar"
+                     IsOpen="False"
+                     IsClosable="True"
+                     Closed="SettingsInfoBar_Closed" />
+        </Border>
+    </Grid>
 </Page>

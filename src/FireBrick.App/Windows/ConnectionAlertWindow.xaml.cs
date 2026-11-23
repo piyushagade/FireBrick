@@ -1,12 +1,14 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using FireBrick.App.Services;
+using FireBrick.Core.Engine;
 using FireBrick.Core.Interop;
 using FireBrick.Core.Models;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
@@ -37,14 +39,23 @@ public sealed partial class ConnectionAlertWindow : Window
     private const int ExpandedHeightDip = 348;
     private const int CondensedWidthDip = 396;
     private const int CondensedHeightDip = 96;
+    private const int CountdownExtraHeightDip = 52;
 
     private readonly List<ConnectionEventDto> _queue = new();
+    private readonly HashSet<string> _cancelledCountdownIds = new(StringComparer.Ordinal);
+    private readonly DispatcherTimer _countdownTimer;
     private readonly IntPtr _hwnd;
     private readonly SubclassProc _subclassDelegate;
     private int _currentIndex;
     private bool _positionedOnce;
     private bool _allowClose;
     private bool _isCompactView;
+    private bool _isCountdownVisible;
+    private bool _countdownPausedByHover;
+    private AutoRuleDto? _activeCountdownRule;
+    private ConnectionEventDto? _activeCountdownEvent;
+    private int _countdownTotalMs;
+    private int _countdownRemainingMs;
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hWnd);
@@ -83,6 +94,9 @@ public sealed partial class ConnectionAlertWindow : Window
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FireBrick.ico");
         if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
         AppWindow.Closing += OnWindowClosing;
+
+        _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _countdownTimer.Tick += OnCountdownTick;
 
         ApplyTheme();
         ApplyViewMode(FirewallBackendService.Instance.GetSettings().CompactAlertView, anchorBottomRight: false);
@@ -135,6 +149,7 @@ public sealed partial class ConnectionAlertWindow : Window
 
     public void ForceClose()
     {
+        StopCountdown(updateLayout: false);
         _allowClose = true;
         RemoveWindowSubclass(_hwnd, _subclassDelegate, 2);
         Close();
@@ -145,7 +160,9 @@ public sealed partial class ConnectionAlertWindow : Window
         if (!_allowClose)
         {
             args.Cancel = true;
+            StopCountdown(updateLayout: false);
             _queue.Clear();
+            _cancelledCountdownIds.Clear();
             _currentIndex = 0;
             AppWindow.Hide();
         }
@@ -193,8 +210,10 @@ public sealed partial class ConnectionAlertWindow : Window
             isCompact ? "Switch to Expanded view" : "Switch to Condensed view");
 
         double scale = Math.Max(1.0, GetDpiForWindow(_hwnd) / 96.0);
+        int baseHeight = isCompact ? CondensedHeightDip : ExpandedHeightDip;
+        if (_isCountdownVisible) baseHeight += CountdownExtraHeightDip;
         int targetW = (int)Math.Round((isCompact ? CondensedWidthDip : ExpandedWidthDip) * scale);
-        int targetH = (int)Math.Round((isCompact ? CondensedHeightDip : ExpandedHeightDip) * scale);
+        int targetH = (int)Math.Round(baseHeight * scale);
 
         var oldPos = AppWindow.Position;
         var oldSize = AppWindow.Size;
@@ -219,8 +238,16 @@ public sealed partial class ConnectionAlertWindow : Window
 
     private void RenderCurrentAlert()
     {
+        StopCountdown(updateLayout: false);
+
         if (_queue.Count == 0)
         {
+            if (_isCountdownVisible)
+            {
+                _isCountdownVisible = false;
+                CountdownBannerBorder.Visibility = Visibility.Collapsed;
+                ApplyViewMode(_isCompactView, anchorBottomRight: _positionedOnce);
+            }
             AppWindow.Hide();
             return;
         }
@@ -285,15 +312,20 @@ public sealed partial class ConnectionAlertWindow : Window
         ScopeIpPortItem.Content = $"IP & port ({evt.RemoteEndpoint})";
         ScopeCombo.SelectedIndex = 0;
 
-        // Default temp button text
-        int defaultMins = FirewallBackendService.Instance.GetSettings().DefaultTempRuleMinutes;
+        // Default temp button text & search engine tooltip
+        var cfg = FirewallBackendService.Instance.GetSettings();
+        int defaultMins = cfg.DefaultTempRuleMinutes;
         TempAllowButton.Content = $"Allow ({defaultMins}m)";
         ToolTipService.SetToolTip(
             CondensedTempAllowButton,
             $"Allow for {defaultMins} minutes (right-click for other durations)");
 
+        var engine = string.IsNullOrWhiteSpace(cfg.SearchEngine) ? "Google" : cfg.SearchEngine;
+        ToolTipService.SetToolTip(
+            SearchWebButton,
+            $"Look up on {engine} (right-click to switch engine)");
+
         // Async Reverse DNS + GeoIP resolution
-        var cfg = FirewallBackendService.Instance.GetSettings();
         if (!string.IsNullOrWhiteSpace(evt.RemoteHostName) || !string.IsNullOrWhiteSpace(evt.GeoLocation))
         {
             RemoteHostText.Text = FormatHostAndGeo(evt.RemoteHostName, evt.GeoLocation);
@@ -309,6 +341,9 @@ public sealed partial class ConnectionAlertWindow : Window
         {
             RemoteHostText.Visibility = Visibility.Collapsed;
         }
+
+        // Check if an Auto-Rule matches this alert (Countdown mode starts timer; Instant shouldn't reach here, but handled safely)
+        EvaluateAutoRuleForCurrentAlert(evt);
     }
 
     private void ApplyTrustBadge(string label, string glyph, Color color)
@@ -398,6 +433,12 @@ public sealed partial class ConnectionAlertWindow : Window
                 {
                     RemoteHostText.Visibility = Visibility.Collapsed;
                 }
+
+                // Re-evaluate Domain/Host auto-rules now that Reverse DNS & GeoIP are resolved
+                if (_activeCountdownRule == null)
+                {
+                    EvaluateAutoRuleForCurrentAlert(evt);
+                }
             }
         });
     }
@@ -455,6 +496,7 @@ public sealed partial class ConnectionAlertWindow : Window
 
     private async Task ApplyActionAndAdvanceAsync(RuleAction action, int? tempMinutes)
     {
+        StopCountdown(updateLayout: false);
         if (_queue.Count == 0) return;
         var evt = _queue[_currentIndex];
         try
@@ -547,6 +589,54 @@ public sealed partial class ConnectionAlertWindow : Window
         catch { }
     }
 
+    private void SearchWeb_Click(object sender, RoutedEventArgs e)
+    {
+        var engine = FirewallBackendService.Instance.GetSettings().SearchEngine;
+        OpenAppWebSearch(engine);
+    }
+
+    private void SearchWebWithEngine_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem item && item.Tag is string engine && !string.IsNullOrWhiteSpace(engine))
+        {
+            var cfg = FirewallBackendService.Instance.GetSettings();
+            cfg.SearchEngine = engine;
+            FirewallBackendService.Instance.SaveSettings(cfg);
+            ToolTipService.SetToolTip(SearchWebButton, $"Look up on {engine} (right-click to switch engine)");
+            OpenAppWebSearch(engine);
+        }
+    }
+
+    private void OpenAppWebSearch(string? searchEngine)
+    {
+        if (_queue.Count == 0) return;
+        var evt = _queue[_currentIndex];
+        var appName = string.IsNullOrWhiteSpace(evt.ApplicationName)
+            ? Path.GetFileName(evt.ApplicationPath)
+            : evt.ApplicationName;
+        if (string.IsNullOrWhiteSpace(appName)) return;
+
+        var publisher = evt.Publisher?.Trim();
+        var query = !string.IsNullOrWhiteSpace(publisher) &&
+                    !string.Equals(publisher, "Unknown", StringComparison.OrdinalIgnoreCase)
+            ? $"what is {appName} {publisher}"
+            : $"what is {appName}";
+
+        var encoded = Uri.EscapeDataString(query);
+        var url = searchEngine?.Trim() switch
+        {
+            "Bing" => $"https://www.bing.com/search?q={encoded}",
+            "DuckDuckGo" => $"https://duckduckgo.com/?q={encoded}",
+            _ => $"https://www.google.com/search?q={encoded}"
+        };
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
     private void CopyPath_Click(object sender, RoutedEventArgs e)
     {
         if (_queue.Count == 0) return;
@@ -556,5 +646,331 @@ public sealed partial class ConnectionAlertWindow : Window
         pkg.SetText(path);
         Clipboard.SetContent(pkg);
         Clipboard.Flush();
+    }
+
+    private void EvaluateAutoRuleForCurrentAlert(ConnectionEventDto evt)
+    {
+        if (_cancelledCountdownIds.Contains(evt.Id))
+        {
+            SetCountdownBannerVisible(false);
+            return;
+        }
+
+        var matched = FirewallBackendService.Instance.MatchAutoRule(evt);
+        if (matched == null)
+        {
+            SetCountdownBannerVisible(false);
+            return;
+        }
+
+        if (matched.TriggerMode == AutoRuleTriggerMode.Instant)
+        {
+            // Late match (e.g. after async DNS/GeoIP resolution) -> apply silently and advance
+            _ = ApplyMatchedAutoRuleAsync(matched, evt);
+            return;
+        }
+
+        StartCountdown(matched, evt);
+    }
+
+    private void StartCountdown(AutoRuleDto rule, ConnectionEventDto evt)
+    {
+        _activeCountdownRule = rule;
+        _activeCountdownEvent = evt;
+        _countdownTotalMs = Math.Clamp(rule.CountdownSeconds, 2, 60) * 1000;
+        _countdownRemainingMs = _countdownTotalMs;
+        _countdownPausedByHover = false;
+
+        var accent = rule.Action == RuleAction.Allow
+            ? Color.FromArgb(255, 16, 185, 129)
+            : Color.FromArgb(255, 239, 68, 68);
+        CountdownIcon.Foreground = new SolidColorBrush(accent);
+        CountdownProgressBar.Foreground = new SolidColorBrush(accent);
+        CountdownProgressBar.Value = 100;
+
+        UpdateCountdownBannerText();
+        SetCountdownBannerVisible(true);
+        _countdownTimer.Start();
+    }
+
+    private void StopCountdown(bool updateLayout)
+    {
+        _countdownTimer.Stop();
+        _activeCountdownRule = null;
+        _activeCountdownEvent = null;
+        _countdownPausedByHover = false;
+        if (updateLayout)
+        {
+            SetCountdownBannerVisible(false);
+        }
+    }
+
+    private void SetCountdownBannerVisible(bool visible)
+    {
+        if (_isCountdownVisible == visible)
+            return;
+
+        _isCountdownVisible = visible;
+        CountdownBannerBorder.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        ApplyViewMode(_isCompactView, anchorBottomRight: _positionedOnce);
+    }
+
+    private void UpdateCountdownBannerText()
+    {
+        if (_activeCountdownRule == null) return;
+        int secs = Math.Max(1, (int)Math.Ceiling(_countdownRemainingMs / 1000.0));
+        var verb = _activeCountdownRule.Action == RuleAction.Allow ? "Auto-Allowing" : "Auto-Blocking";
+        var ruleName = string.IsNullOrWhiteSpace(_activeCountdownRule.Name)
+            ? _activeCountdownRule.Pattern
+            : _activeCountdownRule.Name;
+
+        CountdownStatusText.Text = _countdownPausedByHover
+            ? $"Paused (hover) — {verb} in {secs}s ({ruleName})"
+            : $"{verb} in {secs}s… ({ruleName})";
+    }
+
+    private void OnCountdownTick(object? sender, object e)
+    {
+        if (_activeCountdownRule == null || _activeCountdownEvent == null)
+        {
+            StopCountdown(updateLayout: true);
+            return;
+        }
+
+        if (_countdownPausedByHover)
+            return;
+
+        _countdownRemainingMs -= 100;
+        if (_countdownRemainingMs <= 0)
+        {
+            var rule = _activeCountdownRule;
+            var evt = _activeCountdownEvent;
+            StopCountdown(updateLayout: false);
+            _ = ApplyMatchedAutoRuleAsync(rule, evt);
+            return;
+        }
+
+        CountdownProgressBar.Value = _countdownTotalMs > 0
+            ? (_countdownRemainingMs * 100.0) / _countdownTotalMs
+            : 0;
+        UpdateCountdownBannerText();
+    }
+
+    private void RootGrid_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (_activeCountdownRule != null && !_countdownPausedByHover)
+        {
+            _countdownPausedByHover = true;
+            UpdateCountdownBannerText();
+        }
+    }
+
+    private void RootGrid_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (_activeCountdownRule != null && _countdownPausedByHover)
+        {
+            _countdownPausedByHover = false;
+            UpdateCountdownBannerText();
+        }
+    }
+
+    private void CancelCountdown_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeCountdownEvent != null)
+        {
+            _cancelledCountdownIds.Add(_activeCountdownEvent.Id);
+        }
+        StopCountdown(updateLayout: true);
+    }
+
+    private async Task ApplyMatchedAutoRuleAsync(AutoRuleDto autoRule, ConnectionEventDto evt)
+    {
+        try
+        {
+            var fwRule = AutoRuleManager.BuildFirewallRule(autoRule, evt);
+            await FirewallBackendService.Instance.CreateRuleAsync(fwRule);
+            await FirewallBackendService.Instance.RecordAutoRuleHitAsync(autoRule.Id);
+            FirewallBackendService.Instance.Analytics.TrackAlertDecision(autoRule.Action, fwRule.IsTemporary);
+
+            if (autoRule.Action == RuleAction.Block && FirewallBackendService.Instance.GetSettings().KillConnectionsOnBlock)
+            {
+                await FirewallBackendService.Instance.KillConnectionsForAppAsync(evt.ApplicationPath);
+            }
+        }
+        catch
+        {
+            // Non-fatal
+        }
+
+        int idx = _queue.IndexOf(evt);
+        if (idx >= 0)
+        {
+            _queue.RemoveAt(idx);
+            if (_currentIndex >= _queue.Count && _queue.Count > 0)
+                _currentIndex = _queue.Count - 1;
+            RenderCurrentAlert();
+        }
+    }
+
+    private void AutoRuleQuickButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_queue.Count == 0) return;
+        var evt = _queue[_currentIndex];
+
+        var flyout = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.TopEdgeAlignedRight };
+
+        bool hasTrustedPublisher = evt.SignatureStatus == SignatureTrustStatus.Trusted &&
+                                   !string.IsNullOrWhiteSpace(evt.Publisher) &&
+                                   !string.Equals(evt.Publisher, "Unknown", StringComparison.OrdinalIgnoreCase);
+
+        if (hasTrustedPublisher)
+        {
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Allow Publisher \"{evt.Publisher}\" (Instant)",
+                new AutoRuleDto
+                {
+                    Name = $"Allow Publisher: {evt.Publisher}",
+                    MatchField = AutoRuleMatchField.Publisher,
+                    Pattern = evt.Publisher,
+                    RequireTrustedSignature = true,
+                    Action = RuleAction.Allow,
+                    TriggerMode = AutoRuleTriggerMode.Instant,
+                    RuleScope = GetSelectedAutoRuleScope()
+                }, evt));
+
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Allow Publisher \"{evt.Publisher}\" (5s Countdown)",
+                new AutoRuleDto
+                {
+                    Name = $"Allow Publisher: {evt.Publisher}",
+                    MatchField = AutoRuleMatchField.Publisher,
+                    Pattern = evt.Publisher,
+                    RequireTrustedSignature = true,
+                    Action = RuleAction.Allow,
+                    TriggerMode = AutoRuleTriggerMode.Countdown,
+                    CountdownSeconds = 5,
+                    RuleScope = GetSelectedAutoRuleScope()
+                }, evt));
+
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Block Publisher \"{evt.Publisher}\" (Instant)",
+                new AutoRuleDto
+                {
+                    Name = $"Block Publisher: {evt.Publisher}",
+                    MatchField = AutoRuleMatchField.Publisher,
+                    Pattern = evt.Publisher,
+                    RequireTrustedSignature = true,
+                    Action = RuleAction.Block,
+                    TriggerMode = AutoRuleTriggerMode.Instant,
+                    RuleScope = GetSelectedAutoRuleScope()
+                }, evt));
+
+            flyout.Items.Add(new MenuFlyoutSeparator());
+        }
+
+        if (!string.IsNullOrWhiteSpace(evt.ApplicationName))
+        {
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Allow App \"{evt.ApplicationName}\" (5s Countdown)",
+                new AutoRuleDto
+                {
+                    Name = $"Allow App: {evt.ApplicationName}",
+                    MatchField = AutoRuleMatchField.AppNameOrPath,
+                    Pattern = evt.ApplicationName,
+                    RequireTrustedSignature = false,
+                    Action = RuleAction.Allow,
+                    TriggerMode = AutoRuleTriggerMode.Countdown,
+                    CountdownSeconds = 5,
+                    RuleScope = GetSelectedAutoRuleScope()
+                }, evt));
+
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Block App \"{evt.ApplicationName}\" (Instant)",
+                new AutoRuleDto
+                {
+                    Name = $"Block App: {evt.ApplicationName}",
+                    MatchField = AutoRuleMatchField.AppNameOrPath,
+                    Pattern = evt.ApplicationName,
+                    RequireTrustedSignature = false,
+                    Action = RuleAction.Block,
+                    TriggerMode = AutoRuleTriggerMode.Instant,
+                    RuleScope = GetSelectedAutoRuleScope()
+                }, evt));
+        }
+
+        if (!string.IsNullOrWhiteSpace(evt.RemoteAddress))
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Allow IP {evt.RemoteAddress} (Instant)",
+                new AutoRuleDto
+                {
+                    Name = $"Allow IP: {evt.RemoteAddress}",
+                    MatchField = AutoRuleMatchField.IpOrCidr,
+                    Pattern = evt.RemoteAddress,
+                    RequireTrustedSignature = false,
+                    Action = RuleAction.Allow,
+                    TriggerMode = AutoRuleTriggerMode.Instant,
+                    RuleScope = AutoRuleScope.IpAndPort
+                }, evt));
+
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Block IP {evt.RemoteAddress} (Instant)",
+                new AutoRuleDto
+                {
+                    Name = $"Block IP: {evt.RemoteAddress}",
+                    MatchField = AutoRuleMatchField.IpOrCidr,
+                    Pattern = evt.RemoteAddress,
+                    RequireTrustedSignature = false,
+                    Action = RuleAction.Block,
+                    TriggerMode = AutoRuleTriggerMode.Instant,
+                    RuleScope = AutoRuleScope.IpAndPort
+                }, evt));
+        }
+
+        if (!string.IsNullOrWhiteSpace(evt.RemoteHostName))
+        {
+            flyout.Items.Add(CreateQuickAutoRuleItem(
+                $"Auto-Block Host \"{evt.RemoteHostName}\" (Instant)",
+                new AutoRuleDto
+                {
+                    Name = $"Block Host: {evt.RemoteHostName}",
+                    MatchField = AutoRuleMatchField.DomainOrHost,
+                    Pattern = evt.RemoteHostName,
+                    RequireTrustedSignature = false,
+                    Action = RuleAction.Block,
+                    TriggerMode = AutoRuleTriggerMode.Instant,
+                    RuleScope = AutoRuleScope.IpAndPort
+                }, evt));
+        }
+
+        flyout.ShowAt(AutoRuleQuickButton);
+    }
+
+    private AutoRuleScope GetSelectedAutoRuleScope()
+    {
+        var scopeTag = (ScopeCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Any";
+        return scopeTag switch
+        {
+            "PortOnly" => AutoRuleScope.PortOnly,
+            "IpAndPort" => AutoRuleScope.IpAndPort,
+            _ => AutoRuleScope.Any
+        };
+    }
+
+    private MenuFlyoutItem CreateQuickAutoRuleItem(string label, AutoRuleDto rule, ConnectionEventDto evt)
+    {
+        var item = new MenuFlyoutItem { Text = label };
+        item.Click += async (_, _) =>
+        {
+            StopCountdown(updateLayout: false);
+            try
+            {
+                await FirewallBackendService.Instance.UpsertAutoRuleAsync(rule);
+            }
+            catch { }
+            await ApplyMatchedAutoRuleAsync(rule, evt);
+        };
+        return item;
     }
 }

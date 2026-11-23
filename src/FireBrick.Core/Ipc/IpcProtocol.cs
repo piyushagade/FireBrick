@@ -32,6 +32,9 @@ public static class IpcCommands
     public const string SyncBlocklist = "SyncBlocklist";
     public const string RemoveBlocklist = "RemoveBlocklist";
     public const string GetCurrentNetworkName = "GetCurrentNetworkName";
+    public const string GetAutoRules = "GetAutoRules";
+    public const string SaveAutoRules = "SaveAutoRules";
+    public const string RecordAutoRuleHit = "RecordAutoRuleHit";
 }
 
 public sealed class IpcRequest

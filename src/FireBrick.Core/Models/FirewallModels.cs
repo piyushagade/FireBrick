@@ -194,6 +194,7 @@ public sealed class ConnectionEventDto
     public string FilterOrigin { get; set; } = string.Empty;
     public SignatureTrustStatus SignatureStatus { get; set; } = SignatureTrustStatus.Unknown;
     public string Publisher { get; set; } = string.Empty;
+    public string AutoRuleHandled { get; set; } = string.Empty;
 
     [JsonIgnore]
     public string LocalEndpoint => LocalPort > 0 ? $"{LocalAddress}:{LocalPort}" : LocalAddress;
@@ -287,6 +288,7 @@ public sealed class AppSettingsDto
     public bool StartMinimizedToTray { get; set; }
     public bool IsSidebarOpen { get; set; } = false;
     public bool CompactAlertView { get; set; } = false;
+    public string SearchEngine { get; set; } = "Google"; // Google, Bing, DuckDuckGo
     public bool SendDiagnosticsAndUsage { get; set; } = true;
     public string Theme { get; set; } = "System"; // System, Dark, Light
     public int MaxLogEntries { get; set; } = 1000;
@@ -396,7 +398,7 @@ public sealed class TopAppStatDto
     public string ButtonLabel => IsAllowed ? "Allowed ✓" : "Allow";
 
     [JsonIgnore]
-    public bool CanAllow => !IsAllowed;
+    public bool CanAllow => !IsAllowed && !string.IsNullOrWhiteSpace(ApplicationPath) && ApplicationPath.Trim() != "-";
 }
 
 public sealed class ActivityBucketDto
@@ -408,6 +410,44 @@ public sealed class ActivityBucketDto
     public double AllowedBarHeight { get; set; }
 }
 
+public sealed class LiveAppSummaryDto
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ApplicationPath { get; set; } = string.Empty;
+    public int ConnectionCount { get; set; }
+    public string DetailSummary { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public bool CanBlock => !string.IsNullOrWhiteSpace(ApplicationPath) && ApplicationPath.Contains('\\');
+}
+
+public sealed class RecentBlockedItemDto
+{
+    public string TimeDisplay { get; set; } = string.Empty;
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ApplicationPath { get; set; } = string.Empty;
+    public RuleDirection Direction { get; set; } = RuleDirection.Outbound;
+    public string DirectionProtocol { get; set; } = string.Empty;
+    public string RemoteEndpoint { get; set; } = string.Empty;
+    public int HitCount { get; set; } = 1;
+    public bool IsAllowed { get; set; }
+
+    [JsonIgnore]
+    public string HitCountBadge => HitCount > 1 ? $"{HitCount:N0} blocks" : string.Empty;
+
+    [JsonIgnore]
+    public string HitCountTooltip => $"Blocked {HitCount:N0} times in recent event history";
+
+    [JsonIgnore]
+    public bool HasMultipleHits => HitCount > 1;
+
+    [JsonIgnore]
+    public string AllowButtonLabel => IsAllowed ? "Allowed ✓" : "Allow";
+
+    [JsonIgnore]
+    public bool CanAllow => !IsAllowed && !string.IsNullOrWhiteSpace(ApplicationPath) && ApplicationPath.Trim() != "-";
+}
+
 public sealed class RulePresetDto
 {
     public string Id { get; set; } = string.Empty;
@@ -415,4 +455,87 @@ public sealed class RulePresetDto
     public string Category { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public List<FirewallRuleDto> Rules { get; set; } = new();
+}
+
+public enum AutoRuleMatchField
+{
+    AppNameOrPath = 0,
+    Publisher = 1,
+    IpOrCidr = 2,
+    DomainOrHost = 3
+}
+
+public enum AutoRuleTriggerMode
+{
+    /// <summary>Silently applies the firewall rule immediately with no notification shown.</summary>
+    Instant = 0,
+
+    /// <summary>Shows the connection alert with a live countdown before auto-applying (user can cancel/override).</summary>
+    Countdown = 1
+}
+
+public enum AutoRuleScope
+{
+    Any = 0,
+    PortOnly = 1,
+    IpAndPort = 2
+}
+
+public sealed class AutoRuleDto
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+    public AutoRuleMatchField MatchField { get; set; } = AutoRuleMatchField.Publisher;
+    public string Pattern { get; set; } = string.Empty;
+    public bool RequireTrustedSignature { get; set; } = true;
+    public RuleAction Action { get; set; } = RuleAction.Allow;
+    public AutoRuleTriggerMode TriggerMode { get; set; } = AutoRuleTriggerMode.Instant;
+    public int CountdownSeconds { get; set; } = 5;
+    public AutoRuleScope RuleScope { get; set; } = AutoRuleScope.Any;
+    public int? TemporaryMinutes { get; set; }
+    public int HitCount { get; set; }
+    public DateTimeOffset? LastMatchedUtc { get; set; }
+
+    [JsonIgnore]
+    public string ActionDisplay => Action == RuleAction.Allow ? "ALLOW" : "BLOCK";
+
+    [JsonIgnore]
+    public string MatchFieldDisplay => MatchField switch
+    {
+        AutoRuleMatchField.AppNameOrPath => "Name / Path",
+        AutoRuleMatchField.Publisher => "Publisher",
+        AutoRuleMatchField.IpOrCidr => "IP / CIDR",
+        AutoRuleMatchField.DomainOrHost => "Domain / Host",
+        _ => MatchField.ToString()
+    };
+
+    [JsonIgnore]
+    public string TriggerDisplay => TriggerMode == AutoRuleTriggerMode.Instant
+        ? "Instant (silent)"
+        : $"Countdown ({Math.Clamp(CountdownSeconds, 2, 60)}s)";
+
+    [JsonIgnore]
+    public string ScopeDisplay => RuleScope switch
+    {
+        AutoRuleScope.PortOnly => "Port only",
+        AutoRuleScope.IpAndPort => "IP & port",
+        _ => "Any IP & port"
+    };
+
+    [JsonIgnore]
+    public string DurationDisplay => TemporaryMinutes.HasValue && TemporaryMinutes.Value > 0
+        ? $"Temp ({TemporaryMinutes.Value}m)"
+        : "Permanent";
+
+    [JsonIgnore]
+    public string SummaryDisplay
+    {
+        get
+        {
+            var hits = HitCount > 0 ? $"  •  {HitCount} hit{(HitCount == 1 ? "" : "s")}" : string.Empty;
+            var trusted = MatchField == AutoRuleMatchField.Publisher && RequireTrustedSignature ? " (Trusted)" : string.Empty;
+            return $"{MatchFieldDisplay}{trusted}: {Pattern}  •  {TriggerDisplay}  •  {ScopeDisplay}  •  {DurationDisplay}{hits}";
+        }
+    }
 }

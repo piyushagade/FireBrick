@@ -17,6 +17,9 @@ builder.Services.AddSingleton<TcpConnectionKiller>();
 builder.Services.AddSingleton<NetworkProfileMonitor>();
 builder.Services.AddSingleton<RuleLockMonitor>();
 builder.Services.AddSingleton<BlocklistManager>();
+builder.Services.AddSingleton<AutoRuleManager>();
+builder.Services.AddSingleton<DnsResolverCache>();
+builder.Services.AddSingleton<GeoIpResolverCache>();
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddHostedService<FireBrickWorker>();
 

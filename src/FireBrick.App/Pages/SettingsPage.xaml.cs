@@ -13,11 +13,18 @@ namespace FireBrick.App.Pages;
 public sealed partial class SettingsPage : Page
 {
     private bool _loading = true;
+    private CancellationTokenSource? _toastDismissCts;
 
     public SettingsPage()
     {
         InitializeComponent();
         Loaded += (_, _) => LoadSettings();
+        Unloaded += (_, _) =>
+        {
+            _toastDismissCts?.Cancel();
+            _toastDismissCts?.Dispose();
+            _toastDismissCts = null;
+        };
     }
 
     private void LoadSettings()
@@ -37,6 +44,18 @@ public sealed partial class SettingsPage : Page
             }
 
             AlertViewCombo.SelectedIndex = cfg.CompactAlertView ? 1 : 0;
+
+            var searchEngine = string.IsNullOrWhiteSpace(cfg.SearchEngine) ? "Google" : cfg.SearchEngine;
+            SearchEngineCombo.SelectedIndex = 0;
+            for (int i = 0; i < SearchEngineCombo.Items.Count; i++)
+            {
+                if (SearchEngineCombo.Items[i] is ComboBoxItem item &&
+                    string.Equals((string?)item.Tag, searchEngine, StringComparison.OrdinalIgnoreCase))
+                {
+                    SearchEngineCombo.SelectedIndex = i;
+                    break;
+                }
+            }
 
             ReverseDnsToggle.IsOn = cfg.EnableReverseDns;
             GeoIpToggle.IsOn = cfg.EnableGeoIpLookup;
@@ -95,6 +114,15 @@ public sealed partial class SettingsPage : Page
         var tag = (AlertViewCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Expanded";
         var cfg = FirewallBackendService.Instance.GetSettings();
         cfg.CompactAlertView = string.Equals(tag, "Condensed", StringComparison.OrdinalIgnoreCase);
+        FirewallBackendService.Instance.SaveSettings(cfg);
+    }
+
+    private void SearchEngineCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        var tag = (SearchEngineCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Google";
+        var cfg = FirewallBackendService.Instance.GetSettings();
+        cfg.SearchEngine = tag;
         FirewallBackendService.Instance.SaveSettings(cfg);
     }
 
@@ -394,12 +422,36 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void ShowInfo(InfoBarSeverity severity, string title, string message, ButtonBase? actionButton = null)
+    private async void ShowInfo(InfoBarSeverity severity, string title, string message, ButtonBase? actionButton = null, int lingerSeconds = 5)
     {
+        _toastDismissCts?.Cancel();
+        _toastDismissCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _toastDismissCts = cts;
+
         SettingsInfoBar.Severity = severity;
         SettingsInfoBar.Title = title;
         SettingsInfoBar.Message = message;
         SettingsInfoBar.ActionButton = actionButton;
         SettingsInfoBar.IsOpen = true;
+
+        try
+        {
+            int delaySeconds = actionButton != null ? Math.Max(lingerSeconds, 10) : lingerSeconds;
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                SettingsInfoBar.IsOpen = false;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Replaced by a newer toast or manually dismissed
+        }
+    }
+
+    private void SettingsInfoBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        _toastDismissCts?.Cancel();
     }
 }

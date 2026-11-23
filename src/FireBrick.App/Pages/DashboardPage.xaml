@@ -5,8 +5,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:FireBrick.Core.Models">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="20" MaxWidth="1120" HorizontalAlignment="Stretch" Padding="24,16,28,24">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="20" MaxWidth="1120" HorizontalAlignment="Stretch" Padding="24,16,28,24">
 
             <!-- Header -->
             <Grid>
@@ -19,61 +20,145 @@
                     <TextBlock Text="Manage Windows Defender Firewall profiles, notification modes, and live telemetry." Opacity="0.7" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Border CornerRadius="12" Padding="10,5" VerticalAlignment="Center" Background="{StaticResource FireBrickMutedBadgeBg}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <Ellipse x:Name="ServiceStatusDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
-                            <TextBlock x:Name="ServiceStatusText" Text="Checking..." FontSize="12" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
-                    <Button x:Name="ElevateButton" Content="Run as Administrator" Visibility="Collapsed" Click="ElevateButton_Click" />
-                    <Button Content="Refresh" Click="RefreshButton_Click" />
+                    <Button Style="{ThemeResource AccentButtonStyle}"
+                            CornerRadius="12"
+                            Padding="10,5"
+                            MinWidth="0"
+                            MinHeight="26"
+                            BorderThickness="0"
+                            VerticalAlignment="Center"
+                            Click="RefreshButton_Click"
+                            ToolTipService.ToolTip="Refresh status"
+                            AutomationProperties.Name="Refresh">
+                        <FontIcon Glyph="&#xE72C;" FontSize="13" />
+                    </Button>
                 </StackPanel>
             </Grid>
 
             <!-- Actionable InfoBar (errors / elevation / invalid rules) -->
             <InfoBar x:Name="StatusBanner" IsOpen="False" IsClosable="True" />
 
-            <!-- Stats Cards Row -->
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+            <!-- Unified Detailed Status Card -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="20,16">
+                <StackPanel>
+                    <!-- Top Row: Overall Firewall & Service Status -->
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="ACTIVE RULES" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
-                        <TextBlock x:Name="EnabledRulesText" Text="—" FontSize="26" FontWeight="SemiBold" />
-                        <TextBlock x:Name="TotalRulesSubText" Text="of — total" FontSize="12" Opacity="0.65" />
-                    </StackPanel>
-                </Border>
+                        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <Border x:Name="StatusShieldBadge" Width="40" Height="40" CornerRadius="8" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center">
+                                <FontIcon x:Name="StatusShieldIcon" Glyph="&#xEA18;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Spacing="4" VerticalAlignment="Center">
+                                <TextBlock x:Name="FirewallHeadlineText" Text="Checking Firewall Status..." FontSize="16" FontWeight="SemiBold" />
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Ellipse x:Name="ServiceStatusDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ServiceStatusText" Text="Checking service..." FontSize="12" Opacity="0.8" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Text="•" FontSize="12" Opacity="0.4" VerticalAlignment="Center" />
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Ellipse x:Name="AuditDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="AuditPillText" Text="WFP Auditing: —" FontSize="12" Opacity="0.8" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
 
-                <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="BLOCKED EVENTS" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
-                        <TextBlock x:Name="BlockedEventsText" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource FireBrickBlockBrush}" />
-                        <TextBlock Text="from WFP Security Log" FontSize="12" Opacity="0.65" />
-                    </StackPanel>
-                </Border>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button x:Name="ElevateButton" Content="Run as Administrator" Visibility="Collapsed" Click="ElevateButton_Click" />
+                            <Button Click="OpenWfMscButton_Click" ToolTipService.ToolTip="Open Windows Defender Firewall with Advanced Security (wf.msc)">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                                    <TextBlock Text="Open WF.msc" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
 
-                <Border Grid.Column="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="TEMPORARY RULES" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
-                        <TextBlock x:Name="TempRulesText" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource FireBrickAccentBrush}" />
-                        <TextBlock Text="auto-expiring rules" FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                </Border>
+                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,14" />
 
-                <Border Grid.Column="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="INVALID RULES" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
-                        <TextBlock x:Name="InvalidRulesText" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource FireBrickWarnBrush}" />
-                        <HyperlinkButton x:Name="CleanupInvalidLink" Content="Clean up orphaned" Padding="0" FontSize="12" Click="CleanupInvalidLink_Click" />
-                    </StackPanel>
-                </Border>
-            </Grid>
+                    <!-- Middle Row: Key Metrics -->
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Text="ACTIVE RULES" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
+                            <TextBlock x:Name="EnabledRulesText" Text="—" FontSize="24" FontWeight="SemiBold" />
+                            <TextBlock x:Name="TotalRulesSubText" Text="of — total" FontSize="12" Opacity="0.65" />
+                        </StackPanel>
+
+                        <Border Grid.Column="1" Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,4" />
+
+                        <StackPanel Grid.Column="2" Spacing="3">
+                            <TextBlock Text="BLOCKED EVENTS" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
+                            <TextBlock x:Name="BlockedEventsText" Text="—" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource FireBrickBlockBrush}" />
+                            <TextBlock Text="from WFP Security Log" FontSize="12" Opacity="0.65" />
+                        </StackPanel>
+
+                        <Border Grid.Column="3" Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,4" />
+
+                        <StackPanel Grid.Column="4" Spacing="3">
+                            <TextBlock Text="TEMPORARY RULES" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
+                            <TextBlock x:Name="TempRulesText" Text="—" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource FireBrickAccentBrush}" />
+                            <TextBlock Text="auto-expiring rules" FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+
+                        <Border Grid.Column="5" Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,4" />
+
+                        <StackPanel Grid.Column="6" Spacing="3">
+                            <TextBlock Text="INVALID RULES" FontSize="11" FontWeight="SemiBold" Opacity="0.65" />
+                            <TextBlock x:Name="InvalidRulesText" Text="—" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource FireBrickWarnBrush}" />
+                            <TextBlock x:Name="NoInvalidRulesText" Text="all paths valid" FontSize="12" Opacity="0.65" />
+                            <HyperlinkButton x:Name="CleanupInvalidLink" Content="Clean up orphaned" Padding="0" FontSize="12" Visibility="Collapsed" Click="CleanupInvalidLink_Click" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,14,0,12" />
+
+                    <!-- Bottom Row: Windows Defender Firewall Profiles -->
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Windows Firewall Profiles" FontSize="12" FontWeight="SemiBold" Opacity="0.7" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Ellipse x:Name="DomainDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="DomainPillText" Text="Domain: —" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Ellipse x:Name="PrivateDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="PrivatePillText" Text="Private: —" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Ellipse x:Name="PublicDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="PublicPillText" Text="Public: —" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
 
             <!-- WFC Filtering Profiles -->
             <StackPanel Spacing="10">
@@ -175,136 +260,224 @@
                 </Grid>
             </StackPanel>
 
-            <!-- Activity Chart & Top Blocked Apps -->
+            <!-- Live Active Apps & Security Posture -->
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.2*" />
+                    <ColumnDefinition Width="1.15*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- 60-Minute Activity Chart -->
-                <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="10">
-                        <Grid>
+                <!-- Live Active Apps -->
+                <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                    <StackPanel>
+                        <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" CornerRadius="7,7,0,0" Padding="16,11">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE774;" FontSize="14" Opacity="0.85" VerticalAlignment="Center" />
+                                    <TextBlock Text="Live Active Apps" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Border Grid.Column="1" CornerRadius="10" Padding="8,2" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center">
+                                    <TextBlock x:Name="LiveSocketsBadgeText" Text="—" FontSize="11" Opacity="0.8" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Padding="16,12,16,8" Spacing="8">
+                            <TextBlock x:Name="EmptyLiveAppsText" Text="No active connections detected right now." FontSize="12" Opacity="0.65" Visibility="Collapsed" Margin="0,0,0,8" />
+
+                            <ItemsControl x:Name="LiveActiveAppsList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:LiveAppSummaryDto">
+                                        <Grid Margin="0,0,0,8" ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind ApplicationName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ApplicationPath}" />
+                                                <TextBlock Text="{x:Bind DetailSummary}" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" CornerRadius="8" Padding="7,2" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind ConnectionCount}" FontSize="11" FontWeight="SemiBold" />
+                                            </Border>
+                                            <Button Grid.Column="2" Content="Block" IsEnabled="{x:Bind CanBlock}" Padding="8,3" FontSize="11" Tag="{x:Bind ApplicationPath}" Click="QuickBlockLiveApp_Click" ToolTipService.ToolTip="Create outbound Block rule and sever active sockets" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Security Posture & Rule Health -->
+                <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                    <StackPanel>
+                        <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" CornerRadius="7,7,0,0" Padding="16,11">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xEA18;" FontSize="14" Opacity="0.85" VerticalAlignment="Center" />
+                                    <TextBlock Text="Security Posture" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Border Grid.Column="1" CornerRadius="10" Padding="8,2" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="5">
+                                        <FontIcon Glyph="&#xE701;" FontSize="11" Opacity="0.8" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="CurrentNetworkText" Text="—" FontSize="11" Opacity="0.85" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Padding="16,12,16,14" Spacing="10">
+                            <!-- Rule Lock -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse x:Name="RuleLockDot" Grid.Column="0" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Rule Lock Guard" FontSize="12" Opacity="0.85" VerticalAlignment="Center" />
+                                <TextBlock x:Name="RuleLockStatusText" Grid.Column="2" Text="—" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Blocklists -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse x:Name="BlocklistDot" Grid.Column="0" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Blocklist Subscriptions" FontSize="12" Opacity="0.85" VerticalAlignment="Center" />
+                                <TextBlock x:Name="BlocklistStatusText" Grid.Column="2" Text="—" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Network Auto-Switch -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse x:Name="NetSwitchDot" Grid.Column="0" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Network Auto-Switch" FontSize="12" Opacity="0.85" VerticalAlignment="Center" />
+                                <TextBlock x:Name="NetSwitchStatusText" Grid.Column="2" Text="—" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Temporary Rules -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse x:Name="TempRulesDot" Grid.Column="0" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Temporary Rules" FontSize="12" Opacity="0.85" VerticalAlignment="Center" />
+                                <TextBlock x:Name="TempRulesStatusText" Grid.Column="2" Text="—" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,2" />
+
+                            <!-- Rule Breakdown -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Rule Breakdown" FontSize="12" Opacity="0.7" VerticalAlignment="Center" />
+                                <TextBlock x:Name="RuleBreakdownText" Grid.Column="1" Text="—" FontSize="12" Opacity="0.9" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Rule Health -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse x:Name="RuleHealthDot" Grid.Column="0" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Rule Health" FontSize="12" Opacity="0.7" VerticalAlignment="Center" />
+                                <TextBlock x:Name="RuleHealthText" Grid.Column="2" Text="—" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Recent Blocked Connections Feed -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                <StackPanel>
+                    <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" CornerRadius="7,7,0,0" Padding="16,11">
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Firewall Activity (Last 60m)" FontWeight="SemiBold" />
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <Border Width="8" Height="8" CornerRadius="2" Background="{StaticResource FireBrickBlockBrush}" VerticalAlignment="Center" />
-                                    <TextBlock Text="Blocked" FontSize="11" Opacity="0.7" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <Border Width="8" Height="8" CornerRadius="2" Background="{StaticResource FireBrickAllowBrush}" VerticalAlignment="Center" />
-                                    <TextBlock Text="Allowed" FontSize="11" Opacity="0.7" />
-                                </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE81C;" FontSize="14" Opacity="0.85" VerticalAlignment="Center" />
+                                <TextBlock Text="Recent Blocked Connections" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
                             </StackPanel>
+                            <TextBlock x:Name="RecentBlockedSummaryText" Grid.Column="1" Text="" FontSize="11" Opacity="0.65" VerticalAlignment="Center" />
                         </Grid>
+                    </Border>
 
-                        <ItemsControl x:Name="ActivityChartItems">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Stretch" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:ActivityBucketDto">
-                                    <StackPanel Width="36" VerticalAlignment="Bottom" Spacing="4">
-                                        <StackPanel Orientation="Horizontal" Spacing="2" Height="68" VerticalAlignment="Bottom" HorizontalAlignment="Center">
-                                            <Border Width="10" Height="{x:Bind BlockedBarHeight}" VerticalAlignment="Bottom" CornerRadius="2" Background="{StaticResource FireBrickBlockBrush}" ToolTipService.ToolTip="{x:Bind BlockedCount}" />
-                                            <Border Width="10" Height="{x:Bind AllowedBarHeight}" VerticalAlignment="Bottom" CornerRadius="2" Background="{StaticResource FireBrickAllowBrush}" ToolTipService.ToolTip="{x:Bind AllowedCount}" />
-                                        </StackPanel>
-                                        <TextBlock Text="{x:Bind Label}" FontSize="9" Opacity="0.6" HorizontalAlignment="Center" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                    <StackPanel Padding="16,12,16,8" Spacing="8">
+                        <TextBlock x:Name="EmptyRecentBlockedText" Text="No recent application blocks recorded." FontSize="12" Opacity="0.65" Visibility="Collapsed" Margin="0,0,0,8" />
 
-                <!-- Top Blocked Applications -->
-                <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Top Blocked Applications" FontWeight="SemiBold" />
-                        <TextBlock x:Name="EmptyTopBlockedText" Text="No blocked applications recorded yet." FontSize="12" Opacity="0.65" Visibility="Collapsed" />
-                        <ItemsControl x:Name="TopBlockedList">
+                        <ItemsControl x:Name="RecentBlockedList">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:TopAppStatDto">
-                                    <Grid Margin="0,0,0,6" ColumnSpacing="8">
+                                <DataTemplate x:DataType="models:RecentBlockedItemDto">
+                                    <Grid Margin="0,0,0,7" ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="58" />
+                                            <ColumnDefinition Width="1.1*" />
+                                            <ColumnDefinition Width="72" />
+                                            <ColumnDefinition Width="1.4*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind ApplicationName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ApplicationPath}" />
-                                            <Border Height="4" Width="{x:Bind BarWidth}" HorizontalAlignment="Left" CornerRadius="2" Background="{StaticResource FireBrickBlockBrush}" />
+                                        <TextBlock Grid.Column="0" Text="{x:Bind TimeDisplay}" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind ApplicationName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ApplicationPath}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind DirectionProtocol}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{x:Bind RemoteEndpoint}" FontSize="12" Opacity="0.8" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind RemoteEndpoint}" VerticalAlignment="Center" />
+                                        <Border Grid.Column="4" CornerRadius="8" Padding="8,2" Background="{StaticResource FireBrickMutedBadgeBg}" VerticalAlignment="Center" Visibility="{x:Bind HasMultipleHits}" ToolTipService.ToolTip="{x:Bind HitCountTooltip}">
+                                            <TextBlock Text="{x:Bind HitCountBadge}" FontSize="11" FontWeight="SemiBold" Opacity="0.85" />
+                                        </Border>
+                                        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <Button Content="{x:Bind AllowButtonLabel}" IsEnabled="{x:Bind CanAllow}" Padding="8,3" FontSize="11" Tag="{x:Bind}" Click="QuickAllowRecent_Click" />
+                                            <Button Content="Temp" IsEnabled="{x:Bind CanAllow}" Padding="8,3" FontSize="11" Tag="{x:Bind}" Click="QuickTempAllowRecent_Click" ToolTipService.ToolTip="Temporarily allow in this direction" />
                                         </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind BlockedCount}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Opacity="0.85" />
-                                        <Button Grid.Column="2" Content="{x:Bind ButtonLabel}" IsEnabled="{x:Bind CanAllow}" Padding="8,3" FontSize="11" Tag="{x:Bind ApplicationPath}" Click="QuickAllowTopApp_Click" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
-                </Border>
-            </Grid>
-
-            <!-- Windows Profile States & Quick Links -->
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
-                <Grid ColumnSpacing="16" RowSpacing="10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Windows Defender Firewall Profiles" FontWeight="SemiBold" VerticalAlignment="Center" />
-
-                    <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" VerticalAlignment="Center" Click="OpenWfMscButton_Click" ToolTipService.ToolTip="Open Windows Defender Firewall with Advanced Security (wf.msc)">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE8A7;" FontSize="12" />
-                            <TextBlock Text="Open WF.msc" />
-                        </StackPanel>
-                    </Button>
-
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                        <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Ellipse x:Name="DomainDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
-                                <TextBlock x:Name="DomainPillText" Text="Domain: —" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Ellipse x:Name="PrivateDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
-                                <TextBlock x:Name="PrivatePillText" Text="Private: —" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Ellipse x:Name="PublicDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
-                                <TextBlock x:Name="PublicPillText" Text="Public: —" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border CornerRadius="12" Padding="10,4" Background="{StaticResource FireBrickMutedBadgeBg}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Ellipse x:Name="AuditDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
-                                <TextBlock x:Name="AuditPillText" Text="WFP Auditing: —" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </Grid>
+                </StackPanel>
             </Border>
 
-        </StackPanel>
-    </ScrollViewer>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Floating Bottom-Right Action Toast -->
+        <Border HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="24,0,28,20"
+                MaxWidth="440"
+                CornerRadius="4"
+                Background="{ThemeResource SolidBackgroundFillColorTertiaryBrush}">
+            <InfoBar x:Name="ActionToast"
+                     IsOpen="False"
+                     IsClosable="True"
+                     Closed="ActionToast_Closed" />
+        </Border>
+    </Grid>
 </Page>
