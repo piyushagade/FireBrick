@@ -539,3 +539,33 @@ public sealed class AutoRuleDto
         }
     }
 }
+
+public sealed class HostsEntryDto
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public bool Enabled { get; set; } = true;
+    public string Address { get; set; } = "0.0.0.0";
+    public string Hosts { get; set; } = string.Empty;
+    public string Comment { get; set; } = string.Empty;
+    public int LineIndex { get; set; } = -1;
+
+    [JsonIgnore]
+    public bool IsSinkhole => Address is "0.0.0.0" or "127.0.0.1" or "::" or "::1";
+
+    [JsonIgnore]
+    public string TypeBadge => Address is "0.0.0.0" or "::"
+        ? "BLOCK"
+        : (Address is "127.0.0.1" or "::1" ? "LOCAL" : "REDIRECT");
+
+    [JsonIgnore]
+    public bool HasComment => !string.IsNullOrWhiteSpace(Comment);
+}
+
+public sealed class HostsFileDocumentDto
+{
+    public string FilePath { get; set; } = string.Empty;
+    public string RawContent { get; set; } = string.Empty;
+    public List<HostsEntryDto> Entries { get; set; } = new();
+    public bool HasBackup { get; set; }
+    public DateTimeOffset? LastModifiedUtc { get; set; }
+}

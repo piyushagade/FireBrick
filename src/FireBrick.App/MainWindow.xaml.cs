@@ -249,6 +249,9 @@ public sealed partial class MainWindow : Window
             case "protection":
                 ContentFrame.Navigate(typeof(ProtectionPage));
                 break;
+            case "hosts":
+                ContentFrame.Navigate(typeof(HostsPage));
+                break;
             case "donate":
                 ContentFrame.Navigate(typeof(DonatePage));
                 break;

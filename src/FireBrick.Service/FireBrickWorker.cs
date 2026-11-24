@@ -29,6 +29,7 @@ public sealed class FireBrickWorker : BackgroundService
     private readonly RuleLockMonitor _ruleLock;
     private readonly BlocklistManager _blocklists;
     private readonly AutoRuleManager _autoRules;
+    private readonly HostsFileManager _hostsFile;
     private readonly DnsResolverCache _dnsCache;
     private readonly GeoIpResolverCache _geoIpCache;
     private readonly SettingsStore _settings;
@@ -47,6 +48,7 @@ public sealed class FireBrickWorker : BackgroundService
         RuleLockMonitor ruleLock,
         BlocklistManager blocklists,
         AutoRuleManager autoRules,
+        HostsFileManager hostsFile,
         DnsResolverCache dnsCache,
         GeoIpResolverCache geoIpCache,
         SettingsStore settings)
@@ -61,6 +63,7 @@ public sealed class FireBrickWorker : BackgroundService
         _ruleLock = ruleLock;
         _blocklists = blocklists;
         _autoRules = autoRules;
+        _hostsFile = hostsFile;
         _dnsCache = dnsCache;
         _geoIpCache = geoIpCache;
         _settings = settings;
@@ -562,6 +565,27 @@ public sealed class FireBrickWorker : BackgroundService
                         _autoRules.RecordHit(id);
                     return IpcResponse.Ok();
                 }
+
+                case IpcCommands.GetHostsFile:
+                    return IpcResponse.Ok(_hostsFile.LoadDocument());
+
+                case IpcCommands.SaveHostsEntries:
+                {
+                    var entries = JsonSerializer.Deserialize<List<HostsEntryDto>>(req.PayloadJson ?? "[]") ?? new();
+                    return IpcResponse.Ok(_hostsFile.SaveEntries(entries));
+                }
+
+                case IpcCommands.SaveHostsRaw:
+                {
+                    var raw = JsonSerializer.Deserialize<string>(req.PayloadJson ?? "\"\"") ?? string.Empty;
+                    return IpcResponse.Ok(_hostsFile.SaveRaw(raw));
+                }
+
+                case IpcCommands.RestoreHostsBackup:
+                    return IpcResponse.Ok(_hostsFile.RestoreBackup());
+
+                case IpcCommands.FlushDnsCache:
+                    return IpcResponse.Ok(HostsFileManager.FlushDnsCache());
 
                 default:
                     return IpcResponse.Fail($"Unknown command: {req.Command}");

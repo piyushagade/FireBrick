@@ -571,6 +571,62 @@ public class CoreTests
         }
     }
 
+    [Fact]
+    public void HostsFileManager_ParsesPreservesCommentsAndBacksUp()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"firebrick_hosts_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        var hostsPath = Path.Combine(tmpDir, "hosts");
+        var backupPath = Path.Combine(tmpDir, "hosts.bak");
+        try
+        {
+            const string initial = """
+                # Copyright (c) Microsoft Corp.
+                # Header comment line
+
+                127.0.0.1 localhost # loopback
+                # 0.0.0.0 ads.example.com # disabled block
+                """;
+            File.WriteAllText(hostsPath, initial);
+
+            var mgr = new HostsFileManager(hostsPath, backupPath);
+            var doc = mgr.LoadDocument();
+            Assert.Equal(2, doc.Entries.Count);
+            Assert.True(doc.Entries[0].Enabled);
+            Assert.Equal("127.0.0.1", doc.Entries[0].Address);
+            Assert.Equal("localhost", doc.Entries[0].Hosts);
+            Assert.Equal("loopback", doc.Entries[0].Comment);
+            Assert.False(doc.Entries[1].Enabled);
+            Assert.Equal("0.0.0.0", doc.Entries[1].Address);
+            Assert.Equal("ads.example.com", doc.Entries[1].Hosts);
+
+            // Toggle disabled entry ON and add a new entry
+            doc.Entries[1].Enabled = true;
+            doc.Entries.Add(new HostsEntryDto { Address = "::1", Hosts = "dev.local", Comment = "IPv6 dev", Enabled = true });
+            var saved = mgr.SaveEntries(doc.Entries);
+
+            Assert.True(saved.HasBackup);
+            Assert.True(File.Exists(backupPath));
+            Assert.Contains("# Copyright (c) Microsoft Corp.", saved.RawContent);
+            Assert.Contains("# Header comment line", saved.RawContent);
+            Assert.Equal(3, saved.Entries.Count);
+            Assert.All(saved.Entries, e => Assert.True(e.Enabled));
+
+            // Validation rejects bad IP and bad hostname
+            Assert.False(HostsFileManager.ValidateEntry(new HostsEntryDto { Address = "999.999.999.999", Hosts = "test.local" }, out _));
+            Assert.False(HostsFileManager.ValidateEntry(new HostsEntryDto { Address = "127.0.0.1", Hosts = "bad host!" }, out _));
+
+            // Restore backup brings back original 2 entries
+            var restored = mgr.RestoreBackup();
+            Assert.Equal(2, restored.Entries.Count);
+            Assert.False(restored.Entries[1].Enabled);
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
     private sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

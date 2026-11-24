@@ -35,6 +35,11 @@ public static class IpcCommands
     public const string GetAutoRules = "GetAutoRules";
     public const string SaveAutoRules = "SaveAutoRules";
     public const string RecordAutoRuleHit = "RecordAutoRuleHit";
+    public const string GetHostsFile = "GetHostsFile";
+    public const string SaveHostsEntries = "SaveHostsEntries";
+    public const string SaveHostsRaw = "SaveHostsRaw";
+    public const string RestoreHostsBackup = "RestoreHostsBackup";
+    public const string FlushDnsCache = "FlushDnsCache";
 }
 
 public sealed class IpcRequest

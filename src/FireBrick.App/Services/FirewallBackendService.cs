@@ -24,6 +24,7 @@ public sealed class FirewallBackendService : IDisposable
     private readonly RuleLockMonitor _localRuleLock = new();
     private readonly BlocklistManager _localBlocklists = new();
     private readonly AutoRuleManager _localAutoRules = new();
+    private readonly HostsFileManager _localHosts = new();
     private readonly SettingsStore _settingsStore = new();
     private readonly object _autoRulesLock = new();
     private List<AutoRuleDto> _cachedAutoRules = new();
@@ -678,6 +679,112 @@ public sealed class FirewallBackendService : IDisposable
     public string ExportRulesJson(IEnumerable<FirewallRuleDto> rules) => _localFirewall.ExportRulesJson(rules);
 
     public Task<int> ImportRulesJsonAsync(string json) => Task.Run(() => _localFirewall.ImportRulesJson(json));
+
+    public async Task<HostsFileDocumentDto> GetHostsFileAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                var doc = await _ipc.SendAndDeserializeAsync<HostsFileDocumentDto>(IpcCommands.GetHostsFile).ConfigureAwait(false);
+                if (doc != null) return doc;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unknown command", StringComparison.OrdinalIgnoreCase))
+            {
+                // Older service binary running; hosts file is readable directly
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localHosts.LoadDocument()).ConfigureAwait(false);
+    }
+
+    public async Task<HostsFileDocumentDto> SaveHostsEntriesAsync(List<HostsEntryDto> entries)
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return (await _ipc.SendAndDeserializeAsync<HostsFileDocumentDto>(IpcCommands.SaveHostsEntries, entries).ConfigureAwait(false))!;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unknown command", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fall back to direct write (requires elevation or updating FireBrickService)
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localHosts.SaveEntries(entries)).ConfigureAwait(false);
+    }
+
+    public async Task<HostsFileDocumentDto> SaveHostsRawAsync(string rawContent)
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return (await _ipc.SendAndDeserializeAsync<HostsFileDocumentDto>(IpcCommands.SaveHostsRaw, rawContent).ConfigureAwait(false))!;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unknown command", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fall back to direct write
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localHosts.SaveRaw(rawContent)).ConfigureAwait(false);
+    }
+
+    public async Task<HostsFileDocumentDto> RestoreHostsBackupAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return (await _ipc.SendAndDeserializeAsync<HostsFileDocumentDto>(IpcCommands.RestoreHostsBackup).ConfigureAwait(false))!;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unknown command", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fall back to direct write
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localHosts.RestoreBackup()).ConfigureAwait(false);
+    }
+
+    public async Task<bool> FlushDnsCacheAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<bool>(IpcCommands.FlushDnsCache).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Unknown command", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fall back to local ipconfig /flushdns
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(HostsFileManager.FlushDnsCache).ConfigureAwait(false);
+    }
 
     public static void RelaunchAsAdministrator()
     {
