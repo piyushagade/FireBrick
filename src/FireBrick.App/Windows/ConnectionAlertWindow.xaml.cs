@@ -36,7 +36,7 @@ public sealed partial class ConnectionAlertWindow : Window
         nuint dwRefData);
 
     private const int ExpandedWidthDip = 420;
-    private const int ExpandedHeightDip = 348;
+    private const int ExpandedHeightDip = 378;
     private const int CondensedWidthDip = 396;
     private const int CondensedHeightDip = 96;
     private const int CountdownExtraHeightDip = 52;
