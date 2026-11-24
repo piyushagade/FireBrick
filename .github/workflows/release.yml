@@ -227,6 +227,102 @@ jobs:
           Write-Host "Release artifacts:"
           Get-ChildItem -Path "release" | Format-Table Name, Length -AutoSize
 
+      - name: Scan Release Artifacts with VirusTotal
+        env:
+          VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ([string]::IsNullOrWhiteSpace($env:VT_API_KEY)) {
+            Write-Host "VIRUSTOTAL_API_KEY secret is not configured. Skipping VirusTotal scan."
+            exit 0
+          }
+
+          $apiKey = $env:VT_API_KEY.Trim()
+          $files = Get-ChildItem -Path "release" -File | Where-Object { $_.Extension -in '.exe', '.zip' } | Sort-Object Name
+          $rows = New-Object System.Collections.Generic.List[string]
+
+          foreach ($file in $files) {
+            $sha256 = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $reportUrl = "https://www.virustotal.com/gui/file/$sha256"
+            $statusText = "Scan submitted"
+
+            try {
+              Write-Host "Uploading $($file.Name) ($([math]::Round($file.Length / 1MB, 2)) MB) to VirusTotal..."
+
+              if ($file.Length -gt 32MB) {
+                $uploadUrlResp = Invoke-RestMethod `
+                  -Method Get `
+                  -Uri "https://www.virustotal.com/api/v3/files/upload_url" `
+                  -Headers @{ "x-apikey" = $apiKey }
+                $uploadUrl = $uploadUrlResp.data
+              } else {
+                $uploadUrl = "https://www.virustotal.com/api/v3/files"
+              }
+
+              $rawJson = & curl.exe --silent --show-error --fail `
+                -X POST $uploadUrl `
+                -H "x-apikey: $apiKey" `
+                -F "file=@$($file.FullName)"
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "curl.exe upload failed with exit code $LASTEXITCODE"
+              }
+
+              $uploadResult = $rawJson | ConvertFrom-Json
+              $analysisId = $uploadResult.data.id
+
+              if ($analysisId) {
+                Write-Host "Polling VirusTotal analysis $analysisId for $($file.Name)..."
+                $completed = $false
+                for ($attempt = 1; $attempt -le 8; $attempt++) {
+                  Start-Sleep -Seconds 15
+                  $analysis = Invoke-RestMethod `
+                    -Method Get `
+                    -Uri "https://www.virustotal.com/api/v3/analyses/$analysisId" `
+                    -Headers @{ "x-apikey" = $apiKey }
+
+                  $state = $analysis.data.attributes.status
+                  Write-Host "  Attempt $attempt/8: status=$state"
+                  if ($state -eq "completed") {
+                    $stats = $analysis.data.attributes.stats
+                    $malicious = [int]$stats.malicious
+                    $suspicious = [int]$stats.suspicious
+                    $total = $malicious + $suspicious + [int]$stats.undetected + [int]$stats.harmless
+                    $statusText = "$malicious / $total detections"
+                    if ($suspicious -gt 0) {
+                      $statusText += " ($suspicious suspicious)"
+                    }
+                    $completed = $true
+                    break
+                  }
+                }
+
+                if (-not $completed) {
+                  $statusText = "Scan in progress (check report link)"
+                }
+              }
+            } catch {
+              Write-Warning "VirusTotal scan failed for $($file.Name): $_"
+              $statusText = "Upload failed (verify via SHA-256)"
+            }
+
+            $rows.Add("| ``$($file.Name)`` | ``$sha256`` | $statusText | [View Report]($reportUrl) |")
+          }
+
+          if ($rows.Count -gt 0) {
+            $vtMarkdown = @(
+              "### VirusTotal Scans"
+              ""
+              "| File | SHA-256 | Result | Report |"
+              "| :--- | :--- | :--- | :--- |"
+            ) + $rows
+            $vtMarkdown -join "`n" | Set-Content -Path "virustotal_notes.md" -Encoding utf8
+            Write-Host "Generated VirusTotal release notes:"
+            Get-Content "virustotal_notes.md"
+          }
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -263,3 +359,15 @@ jobs:
           $releaseArgs += $assets
 
           gh @releaseArgs
+
+          if (Test-Path "virustotal_notes.md") {
+            $existingNotes = gh release view $tag --json body -q .body
+            $vtNotes = Get-Content "virustotal_notes.md" -Raw
+            $combined = if ([string]::IsNullOrWhiteSpace($existingNotes)) {
+              $vtNotes
+            } else {
+              "$existingNotes`n`n$vtNotes"
+            }
+            $combined | Set-Content -Path "combined_release_notes.md" -Encoding utf8
+            gh release edit $tag --notes-file "combined_release_notes.md"
+          }
