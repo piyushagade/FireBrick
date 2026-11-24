@@ -1,0 +1,265 @@
+name: Release Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type (creates commit & tag automatically)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: 'Custom SemVer (only when bump=custom, e.g. 1.3.0 or 2.0.0-beta.1)'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark GitHub Release as prerelease'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release (win-x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ("${{ github.event_name }}" -eq "push") {
+            $tag = "${{ github.ref_name }}"
+            $fullVersion = $tag.TrimStart('v')
+            $isPrerelease = $fullVersion.Contains('-')
+          } else {
+            git fetch --tags --force
+            $bump = "${{ inputs.bump }}"
+
+            if ($bump -eq "custom") {
+              $raw = "${{ inputs.custom_version }}".Trim().TrimStart('v')
+              if ([string]::IsNullOrWhiteSpace($raw)) {
+                throw "custom_version is required when bump=custom."
+              }
+              $fullVersion = $raw
+            } else {
+              $latestTag = (git tag --list "v*.*.*" --sort=-v:refname | Select-Object -First 1)
+              if ($latestTag -and $latestTag -match '^v(\d+)\.(\d+)\.(\d+)') {
+                $maj = [int]$Matches[1]
+                $min = [int]$Matches[2]
+                $pat = [int]$Matches[3]
+              } else {
+                $props = Get-Content "Directory.Build.props" -Raw
+                if ($props -match '<VersionPrefix[^>]*>(\d+)\.(\d+)\.(\d+)</VersionPrefix>') {
+                  $maj = [int]$Matches[1]
+                  $min = [int]$Matches[2]
+                  $pat = [int]$Matches[3]
+                } else {
+                  $maj = 1; $min = 0; $pat = 0
+                }
+              }
+
+              switch ($bump) {
+                'major' { $maj++; $min = 0; $pat = 0 }
+                'minor' { $min++; $pat = 0 }
+                'patch' { $pat++ }
+              }
+              $fullVersion = "$maj.$min.$pat"
+            }
+
+            $tag = "v$fullVersion"
+            $isPrerelease = ("${{ inputs.prerelease }}" -eq "true") -or $fullVersion.Contains('-')
+          }
+
+          if ($fullVersion -notmatch '^(\d+\.\d+\.\d+)(?:-([0-9A-Za-z.-]+))?$') {
+            throw "Invalid semantic version: '$fullVersion'. Expected MAJOR.MINOR.PATCH[-prerelease]."
+          }
+
+          $coreVersion = $Matches[1]
+          $versionSuffix = if ($Matches[2]) { $Matches[2] } else { "" }
+          $numericVersion = "$coreVersion.0"
+
+          Write-Host "Resolved release version: $fullVersion (tag=$tag, core=$coreVersion, suffix=$versionSuffix, prerelease=$isPrerelease)"
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "core_version=$coreVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version_suffix=$versionSuffix" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "numeric_version=$numericVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "is_prerelease=$($isPrerelease.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Commit version bump and tag (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "${{ steps.version.outputs.tag }}"
+          $coreVersion = "${{ steps.version.outputs.core_version }}"
+          $fullVersion = "${{ steps.version.outputs.full_version }}"
+
+          if (git rev-parse --verify "refs/tags/$tag" 2>$null) {
+            throw "Tag $tag already exists."
+          }
+
+          $propsPath = "Directory.Build.props"
+          $propsContent = Get-Content $propsPath -Raw
+          $updatedProps = $propsContent -replace '(<VersionPrefix[^>]*>)[^<]+(</VersionPrefix>)', "`${1}$coreVersion`${2}"
+          Set-Content -Path $propsPath -Value $updatedProps -NoNewline
+
+          $xamlPath = "src/FireBrick.App/MainWindow.xaml"
+          if (Test-Path $xamlPath) {
+            $xamlContent = Get-Content $xamlPath -Raw
+            $updatedXaml = $xamlContent -replace '(x:Name="VersionBadgeText"\s+Text=")v[^"]+(")', "`${1}v$fullVersion`${2}"
+            Set-Content -Path $xamlPath -Value $updatedXaml -NoNewline
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add Directory.Build.props src/FireBrick.App/MainWindow.xaml
+          if ((git diff --cached --name-only | Measure-Object).Count -gt 0) {
+            git commit -m "chore(release): bump version to $tag"
+          }
+
+          git tag -a "$tag" -m "Release $tag"
+          git push origin HEAD:main
+          git push origin "refs/tags/$tag"
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore & Run Unit Tests
+        shell: pwsh
+        run: |
+          dotnet test tests/FireBrick.Tests/FireBrick.Tests.csproj -c Release --nologo
+
+      - name: Publish FireBrick App & Service (self-contained win-x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $coreVersion = "${{ steps.version.outputs.core_version }}"
+          $suffix = "${{ steps.version.outputs.version_suffix }}"
+
+          $verArgs = @("-p:VersionPrefix=$coreVersion")
+          if (-not [string]::IsNullOrWhiteSpace($suffix)) {
+            $verArgs += "-p:VersionSuffix=$suffix"
+          }
+
+          dotnet publish src/FireBrick.App/FireBrick.App.csproj `
+            -c Release `
+            -r win-x64 `
+            -p:Platform=x64 `
+            --self-contained true `
+            @verArgs `
+            -o publish/app `
+            --nologo
+
+          dotnet publish src/FireBrick.Service/FireBrick.Service.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            @verArgs `
+            -o publish/app/service `
+            --nologo
+
+      - name: Build Inno Setup Installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup compiler (ISCC.exe) not found."
+          }
+
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $workspace = (Get-Location).Path
+
+          & $iscc `
+            "/DMyAppVersion=${{ steps.version.outputs.full_version }}" `
+            "/DMyAppNumericVersion=${{ steps.version.outputs.numeric_version }}" `
+            "/DSourceDir=$workspace\publish\app" `
+            "/DOutputDir=$workspace\release" `
+            "installer\FireBrick.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "ISCC.exe failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Create Portable ZIP & SHA256 Checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = "${{ steps.version.outputs.full_version }}"
+          $zipPath = "release\FireBrick-Portable-$ver-win-x64.zip"
+
+          Compress-Archive -Path "publish\app\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
+
+          $files = Get-ChildItem -Path "release" -File | Where-Object { $_.Extension -in '.exe', '.zip' } | Sort-Object Name
+          $checksumLines = foreach ($f in $files) {
+            $hash = (Get-FileHash -Path $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($f.Name)"
+          }
+          $checksumLines | Set-Content -Path "release\SHA256SUMS.txt" -Encoding ascii
+
+          Write-Host "Release artifacts:"
+          Get-ChildItem -Path "release" | Format-Table Name, Length -AutoSize
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FireBrick-${{ steps.version.outputs.full_version }}-win-x64
+          path: release/*
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "${{ steps.version.outputs.tag }}"
+          $ver = "${{ steps.version.outputs.full_version }}"
+          $isPrerelease = "${{ steps.version.outputs.is_prerelease }}" -eq "true"
+
+          $assets = @(
+            "release\FireBrick-Setup-$ver-win-x64.exe",
+            "release\FireBrick-Portable-$ver-win-x64.zip",
+            "release\SHA256SUMS.txt"
+          )
+
+          $releaseArgs = @(
+            "release", "create", $tag,
+            "--title", "FireBrick $tag",
+            "--generate-notes"
+          )
+          if ($isPrerelease) {
+            $releaseArgs += "--prerelease"
+          } else {
+            $releaseArgs += "--latest"
+          }
+          $releaseArgs += $assets
+
+          gh @releaseArgs

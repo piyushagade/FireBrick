@@ -37,3 +37,16 @@ dotnet publish src/FireBrick.Service/FireBrick.Service.csproj -c Release -r win-
 sc.exe create FireBrickService binPath= "$PWD\publish\service\FireBrick.Service.exe" start= auto
 sc.exe start FireBrickService
 ```
+
+## Releases & Versioning
+
+Version metadata is managed centrally in [`Directory.Build.props`](Directory.Build.props) using Semantic Versioning (`MAJOR.MINOR.PATCH`).
+
+The GitHub Actions workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml)) automatically builds self-contained `win-x64` binaries, packages an Inno Setup Windows installer (`FireBrick-Setup-<version>-win-x64.exe`) and portable archive (`FireBrick-Portable-<version>-win-x64.zip`) with `SHA256SUMS.txt`, and publishes a GitHub Release:
+
+- **Tag-triggered release**:
+  ```powershell
+  git tag -a v1.2.1 -m "Release v1.2.1"
+  git push origin v1.2.1
+  ```
+- **Manual release from GitHub Actions**: Go to **Actions → Release Windows Installer → Run workflow** and select `patch`, `minor`, `major`, or `custom` to automatically bump `Directory.Build.props`, commit, tag, build, and publish the release.
