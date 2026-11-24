@@ -252,6 +252,9 @@ public sealed partial class MainWindow : Window
             case "hosts":
                 ContentFrame.Navigate(typeof(HostsPage));
                 break;
+            case "bandwidth":
+                ContentFrame.Navigate(typeof(BandwidthPage));
+                break;
             case "donate":
                 ContentFrame.Navigate(typeof(DonatePage));
                 break;

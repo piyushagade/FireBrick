@@ -30,6 +30,7 @@ public sealed class FireBrickWorker : BackgroundService
     private readonly BlocklistManager _blocklists;
     private readonly AutoRuleManager _autoRules;
     private readonly HostsFileManager _hostsFile;
+    private readonly BandwidthLimiterManager _bandwidthLimiter;
     private readonly DnsResolverCache _dnsCache;
     private readonly GeoIpResolverCache _geoIpCache;
     private readonly SettingsStore _settings;
@@ -49,6 +50,7 @@ public sealed class FireBrickWorker : BackgroundService
         BlocklistManager blocklists,
         AutoRuleManager autoRules,
         HostsFileManager hostsFile,
+        BandwidthLimiterManager bandwidthLimiter,
         DnsResolverCache dnsCache,
         GeoIpResolverCache geoIpCache,
         SettingsStore settings)
@@ -64,6 +66,7 @@ public sealed class FireBrickWorker : BackgroundService
         _blocklists = blocklists;
         _autoRules = autoRules;
         _hostsFile = hostsFile;
+        _bandwidthLimiter = bandwidthLimiter;
         _dnsCache = dnsCache;
         _geoIpCache = geoIpCache;
         _settings = settings;
@@ -84,11 +87,14 @@ public sealed class FireBrickWorker : BackgroundService
             try { _ruleLock.Arm(_firewall.GetRules()); } catch { }
         }
 
+        try { await _bandwidthLimiter.ReconcileEngineAsync(stoppingToken).ConfigureAwait(false); } catch { }
+
         var pipeTask = RunPipeServerLoopAsync(stoppingToken);
         var expiryTask = RunTempRuleExpiryLoopAsync(stoppingToken);
         var guardTask = RunProtectionLoopAsync(stoppingToken);
 
         await Task.WhenAll(pipeTask, expiryTask, guardTask).ConfigureAwait(false);
+        _bandwidthLimiter.Dispose();
         _auditMonitor.Stop();
     }
 
@@ -290,6 +296,8 @@ public sealed class FireBrickWorker : BackgroundService
                         _logger.LogWarning(ex, "Failed to delete expired temporary rule: {Rule}", rule.RuleName);
                     }
                 }
+
+                await _bandwidthLimiter.CleanupExpiredRulesAsync(ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -586,6 +594,42 @@ public sealed class FireBrickWorker : BackgroundService
 
                 case IpcCommands.FlushDnsCache:
                     return IpcResponse.Ok(HostsFileManager.FlushDnsCache());
+
+                case IpcCommands.GetBandwidthStatus:
+                    return IpcResponse.Ok(_bandwidthLimiter.GetStatus());
+
+                case IpcCommands.SetBandwidthMode:
+                {
+                    var payload = JsonSerializer.Deserialize<SetBandwidthModePayload>(req.PayloadJson!)!;
+                    var status = _bandwidthLimiter.SetModeAsync(payload.Mode, payload.AutoUnloadWinDivertWhenIdle).GetAwaiter().GetResult();
+                    return IpcResponse.Ok(status);
+                }
+
+                case IpcCommands.GetBandwidthRules:
+                    return IpcResponse.Ok(_bandwidthLimiter.GetRules());
+
+                case IpcCommands.SaveBandwidthRule:
+                {
+                    var rule = JsonSerializer.Deserialize<BandwidthRuleDto>(req.PayloadJson!)!;
+                    var saved = _bandwidthLimiter.SaveRuleAsync(rule).GetAwaiter().GetResult();
+                    return IpcResponse.Ok(saved);
+                }
+
+                case IpcCommands.DeleteBandwidthRule:
+                {
+                    var id = JsonSerializer.Deserialize<string>(req.PayloadJson!)!;
+                    _bandwidthLimiter.DeleteRuleAsync(id).GetAwaiter().GetResult();
+                    return IpcResponse.Ok();
+                }
+
+                case IpcCommands.GetBandwidthUsage:
+                    return IpcResponse.Ok(_bandwidthLimiter.GetUsage());
+
+                case IpcCommands.InstallWinDivertAddon:
+                {
+                    var status = _bandwidthLimiter.InstallWinDivertAddonAsync().GetAwaiter().GetResult();
+                    return IpcResponse.Ok(status);
+                }
 
                 default:
                     return IpcResponse.Fail($"Unknown command: {req.Command}");

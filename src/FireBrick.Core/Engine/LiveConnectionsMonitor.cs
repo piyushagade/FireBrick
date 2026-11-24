@@ -12,6 +12,7 @@ namespace FireBrick.Core.Engine;
 public sealed class LiveConnectionsMonitor
 {
     private const int AF_INET = 2;
+    private const int AF_INET6 = 23;
     private const int TCP_TABLE_OWNER_PID_ALL = 5;
     private const int UDP_TABLE_OWNER_PID = 1;
 
@@ -52,12 +53,28 @@ public sealed class LiveConnectionsMonitor
         public int owningPid;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MIB_TCP6ROW_OWNER_PID
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public byte[] localAddr;
+        public uint localScopeId;
+        public uint localPort;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public byte[] remoteAddr;
+        public uint remoteScopeId;
+        public uint remotePort;
+        public uint state;
+        public int owningPid;
+    }
+
     public List<ActiveConnectionDto> GetActiveConnections()
     {
         var results = new List<ActiveConnectionDto>();
         var processCache = new Dictionary<int, (string Name, string Path)>();
 
         CollectTcpV4(results, processCache);
+        CollectTcpV6(results, processCache);
         CollectUdpV4(results, processCache);
 
         return results;
@@ -82,6 +99,48 @@ public sealed class LiveConnectionsMonitor
             for (int i = 0; i < rowCount; i++)
             {
                 var row = Marshal.PtrToStructure<MIB_TCPROW_OWNER_PID>(rowPtr);
+                rowPtr = IntPtr.Add(rowPtr, rowSize);
+
+                var (name, path) = ResolveProcess(row.owningPid, processCache);
+                results.Add(new ActiveConnectionDto
+                {
+                    Protocol = "TCP",
+                    LocalAddress = new IPAddress(row.localAddr).ToString(),
+                    LocalPort = ConvertPort(row.localPort),
+                    RemoteAddress = new IPAddress(row.remoteAddr).ToString(),
+                    RemotePort = ConvertPort(row.remotePort),
+                    State = MapTcpState(row.state),
+                    ProcessId = row.owningPid,
+                    ProcessName = name,
+                    ProcessPath = path
+                });
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    private static void CollectTcpV6(List<ActiveConnectionDto> results, Dictionary<int, (string Name, string Path)> processCache)
+    {
+        int bufferSize = 0;
+        GetExtendedTcpTable(IntPtr.Zero, ref bufferSize, true, AF_INET6, TCP_TABLE_OWNER_PID_ALL);
+        if (bufferSize <= 0) return;
+
+        IntPtr buffer = Marshal.AllocHGlobal(bufferSize);
+        try
+        {
+            if (GetExtendedTcpTable(buffer, ref bufferSize, true, AF_INET6, TCP_TABLE_OWNER_PID_ALL) != 0)
+                return;
+
+            int rowCount = Marshal.ReadInt32(buffer);
+            IntPtr rowPtr = IntPtr.Add(buffer, 4);
+            int rowSize = Marshal.SizeOf<MIB_TCP6ROW_OWNER_PID>();
+
+            for (int i = 0; i < rowCount; i++)
+            {
+                var row = Marshal.PtrToStructure<MIB_TCP6ROW_OWNER_PID>(rowPtr);
                 rowPtr = IntPtr.Add(rowPtr, rowSize);
 
                 var (name, path) = ResolveProcess(row.owningPid, processCache);

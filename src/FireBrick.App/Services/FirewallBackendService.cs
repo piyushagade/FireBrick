@@ -25,6 +25,7 @@ public sealed class FirewallBackendService : IDisposable
     private readonly BlocklistManager _localBlocklists = new();
     private readonly AutoRuleManager _localAutoRules = new();
     private readonly HostsFileManager _localHosts = new();
+    private readonly BandwidthLimiterManager _localBandwidth;
     private readonly SettingsStore _settingsStore = new();
     private readonly object _autoRulesLock = new();
     private List<AutoRuleDto> _cachedAutoRules = new();
@@ -57,6 +58,7 @@ public sealed class FirewallBackendService : IDisposable
 
     private FirewallBackendService()
     {
+        _localBandwidth = new BandwidthLimiterManager(_localLive);
         _analytics = new UsageAnalyticsService(() => _settingsStore.Get().SendDiagnosticsAndUsage);
         _localAudit.ConnectionEventReceived += OnLocalAuditEvent;
         _expiryTimer = new Timer(_ => CheckLocalExpiredRules(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
@@ -83,6 +85,10 @@ public sealed class FirewallBackendService : IDisposable
         if (!IsUsingService)
         {
             _localAudit.TryStart(loadRecentHistory: true);
+            if (IsElevated)
+            {
+                try { await _localBandwidth.ReconcileEngineAsync().ConfigureAwait(false); } catch { }
+            }
         }
 
         try { await GetAutoRulesAsync().ConfigureAwait(false); } catch { }
@@ -969,8 +975,142 @@ public sealed class FirewallBackendService : IDisposable
             {
                 try { _localFirewall.DeleteRule(r.RuleName); } catch { }
             }
+
+            _ = _localBandwidth.CleanupExpiredRulesAsync();
         }
         catch { }
+    }
+
+    public async Task<BandwidthLimiterStatusDto> GetBandwidthStatusAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<BandwidthLimiterStatusDto>(IpcCommands.GetBandwidthStatus, null, 3000).ConfigureAwait(false)
+                       ?? new BandwidthLimiterStatusDto();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localBandwidth.GetStatus()).ConfigureAwait(false);
+    }
+
+    public async Task<BandwidthLimiterStatusDto> SetBandwidthModeAsync(BandwidthLimiterMode mode, bool autoUnloadWhenIdle)
+    {
+        var payload = new SetBandwidthModePayload
+        {
+            Mode = mode,
+            AutoUnloadWinDivertWhenIdle = autoUnloadWhenIdle
+        };
+
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<BandwidthLimiterStatusDto>(IpcCommands.SetBandwidthMode, payload, 15000).ConfigureAwait(false)
+                       ?? new BandwidthLimiterStatusDto();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await _localBandwidth.SetModeAsync(mode, autoUnloadWhenIdle).ConfigureAwait(false);
+    }
+
+    public async Task<List<BandwidthRuleDto>> GetBandwidthRulesAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<List<BandwidthRuleDto>>(IpcCommands.GetBandwidthRules, null, 3000).ConfigureAwait(false)
+                       ?? new List<BandwidthRuleDto>();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localBandwidth.GetRules()).ConfigureAwait(false);
+    }
+
+    public async Task<BandwidthRuleDto> SaveBandwidthRuleAsync(BandwidthRuleDto rule)
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<BandwidthRuleDto>(IpcCommands.SaveBandwidthRule, rule, 15000).ConfigureAwait(false)
+                       ?? rule;
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await _localBandwidth.SaveRuleAsync(rule).ConfigureAwait(false);
+    }
+
+    public async Task DeleteBandwidthRuleAsync(string ruleId)
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                await _ipc.SendAsync(IpcCommands.DeleteBandwidthRule, ruleId, 15000).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        await _localBandwidth.DeleteRuleAsync(ruleId).ConfigureAwait(false);
+    }
+
+    public async Task<List<BandwidthAppUsageDto>> GetBandwidthUsageAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<List<BandwidthAppUsageDto>>(IpcCommands.GetBandwidthUsage, null, 2500).ConfigureAwait(false)
+                       ?? new List<BandwidthAppUsageDto>();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await Task.Run(() => _localBandwidth.GetUsage()).ConfigureAwait(false);
+    }
+
+    public async Task<BandwidthLimiterStatusDto> InstallWinDivertAddonAsync()
+    {
+        if (await TryUseServiceAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                return await _ipc.SendAndDeserializeAsync<BandwidthLimiterStatusDto>(IpcCommands.InstallWinDivertAddon, null, 60000).ConfigureAwait(false)
+                       ?? new BandwidthLimiterStatusDto();
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                MarkServiceDisconnected();
+            }
+        }
+
+        return await _localBandwidth.InstallWinDivertAddonAsync().ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -978,6 +1118,7 @@ public sealed class FirewallBackendService : IDisposable
         _dailyAnalyticsTimer.Dispose();
         _serviceEventPollTimer.Dispose();
         _expiryTimer.Dispose();
+        _localBandwidth.Dispose();
         _localAudit.Dispose();
         _analytics.Dispose();
     }

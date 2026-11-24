@@ -40,6 +40,13 @@ public static class IpcCommands
     public const string SaveHostsRaw = "SaveHostsRaw";
     public const string RestoreHostsBackup = "RestoreHostsBackup";
     public const string FlushDnsCache = "FlushDnsCache";
+    public const string GetBandwidthStatus = "GetBandwidthStatus";
+    public const string SetBandwidthMode = "SetBandwidthMode";
+    public const string GetBandwidthRules = "GetBandwidthRules";
+    public const string SaveBandwidthRule = "SaveBandwidthRule";
+    public const string DeleteBandwidthRule = "DeleteBandwidthRule";
+    public const string GetBandwidthUsage = "GetBandwidthUsage";
+    public const string InstallWinDivertAddon = "InstallWinDivertAddon";
 }
 
 public sealed class IpcRequest
@@ -85,6 +92,12 @@ public sealed class QuickRulePayload
     public Models.RuleAction Action { get; set; } = Models.RuleAction.Allow;
     public Models.RuleDirection Direction { get; set; } = Models.RuleDirection.Outbound;
     public int? TemporaryMinutes { get; set; }
+}
+
+public sealed class SetBandwidthModePayload
+{
+    public Models.BandwidthLimiterMode Mode { get; set; } = Models.BandwidthLimiterMode.Disabled;
+    public bool AutoUnloadWinDivertWhenIdle { get; set; } = true;
 }
 
 public static class PipeFraming

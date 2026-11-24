@@ -14,6 +14,7 @@ public partial class App : Application
     private EventWaitHandle? _activateEvent;
     private CancellationTokenSource? _activateListenerCts;
     private MainWindow? _mainWindow;
+    public static MainWindow? MainWindowInstance { get; private set; }
 
     public App()
     {
@@ -75,6 +76,7 @@ public partial class App : Application
         }
 
         _mainWindow = new MainWindow();
+        MainWindowInstance = _mainWindow;
         StartActivationListener();
 
         if (FirewallBackendService.Instance.GetSettings().StartMinimizedToTray)

@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FireBrick.App.Pages.BandwidthPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:FireBrick.Core.Models">
+
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="20" MaxWidth="1120" Padding="24,16,28,72">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Bandwidth Limiter" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="Throttle per-application download and upload speeds using either driverless Windows QoS (upload-only) or the optional WinDivert add-on (upload &amp; download)." Opacity="0.7" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- Status Banner -->
+                <InfoBar x:Name="StatusInfoBar" IsOpen="True" IsClosable="False" Severity="Informational" Title="Bandwidth Limiter" Message="Loading status..." />
+
+                <!-- 1. Engine Mode Selection -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Rate-Limiting Engine" FontWeight="SemiBold" FontSize="15" />
+
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Option 0: Disabled -->
+                            <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                                <StackPanel Spacing="6">
+                                    <RadioButton x:Name="ModeDisabledRadio" GroupName="BandwidthMode" Content="Disabled (Default)" FontWeight="SemiBold" Checked="ModeRadio_Checked" Tag="Disabled" />
+                                    <TextBlock Text="100% driverless with zero packet inspection overhead. Recommended if you only need per-app blocking." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Option 1: Windows QoS -->
+                            <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                                <StackPanel Spacing="6">
+                                    <RadioButton x:Name="ModeQosRadio" GroupName="BandwidthMode" Content="Windows QoS (Driverless)" FontWeight="SemiBold" Checked="ModeRadio_Checked" Tag="WindowsQos" />
+                                    <TextBlock Text="Uses built-in Windows QoS Packet Scheduler. No kernel driver required. Upload (outbound) throttling only; requires Pro/Enterprise." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Option 2: WinDivert -->
+                            <Border Grid.Column="2" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                                <StackPanel Spacing="6">
+                                    <RadioButton x:Name="ModeWinDivertRadio" GroupName="BandwidthMode" Content="WinDivert Add-on (Full)" FontWeight="SemiBold" Checked="ModeRadio_Checked" Tag="WinDivert" />
+                                    <TextBlock Text="Optional signed WinDivert packet pacer. Supports both download &amp; upload limits on Windows 10/11 Home &amp; Pro." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 2. WinDivert Add-on Card -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="WinDivert Optional Add-on" FontWeight="SemiBold" FontSize="15" />
+                                <TextBlock x:Name="WinDivertStatusText" Text="Checking installation status..." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <ProgressRing x:Name="InstallProgressRing" IsActive="False" Width="20" Height="20" Visibility="Collapsed" />
+                                <Button x:Name="InstallWinDivertBtn" Content="Install WinDivert Add-on" Style="{ThemeResource AccentButtonStyle}" Click="InstallWinDivert_Click" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Auto-unload driver when idle" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="Automatically stops and unloads WinDivert64.sys whenever no app limits are active (recommended for anti-cheat compatibility)." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="AutoUnloadToggle" Grid.Column="1" MinWidth="0" OnContent="On" OffContent="Off" Toggled="AutoUnloadToggle_Toggled" VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 3. Per-App Bandwidth Rules -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Per-Application Speed Limits" FontWeight="SemiBold" FontSize="15" />
+                                <TextBlock Text="Set download and/or upload caps per executable (in KB/s, where 1024 KB/s = 1 MB/s). Set 0 for unlimited." FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="+ Add App Limit" Style="{ThemeResource AccentButtonStyle}" Click="AddRule_Click" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        </Grid>
+
+                        <TextBlock x:Name="EmptyRulesText" Text="No bandwidth limits configured yet. Click '+ Add App Limit' to throttle an application." FontSize="12" Opacity="0.65" />
+
+                        <ItemsControl x:Name="RulesList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:BandwidthRuleDto">
+                                    <Border Margin="0,0,0,6" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="12,8">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind DisplayAppName}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind ApplicationPath}" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <Border CornerRadius="4" Padding="8,3" Background="{StaticResource FireBrickMutedBadgeBg}">
+                                                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource FireBrickAccentBrush}">
+                                                        <Run Text="↓ " /><Run Text="{x:Bind DownloadLimitDisplay}" />
+                                                    </TextBlock>
+                                                </Border>
+                                                <Border CornerRadius="4" Padding="8,3" Background="{StaticResource FireBrickMutedBadgeBg}">
+                                                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource FireBrickAccentBrush}">
+                                                        <Run Text="↑ " /><Run Text="{x:Bind UploadLimitDisplay}" />
+                                                    </TextBlock>
+                                                </Border>
+                                                <Border CornerRadius="4" Padding="8,3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                                    <TextBlock Text="{x:Bind DurationDisplay}" FontSize="11" Opacity="0.75" />
+                                                </Border>
+                                            </StackPanel>
+
+                                            <ToggleSwitch Grid.Column="2" IsOn="{x:Bind Enabled}" Tag="{x:Bind Id}" MinWidth="0" OnContent="" OffContent="" Toggled="RuleEnabled_Toggled" VerticalAlignment="Center" />
+
+                                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                <Button Padding="6,5" Tag="{x:Bind Id}" Click="EditRule_Click" ToolTipService.ToolTip="Edit limit">
+                                                    <FontIcon Glyph="&#xE70F;" FontSize="11" />
+                                                </Button>
+                                                <Button Padding="6,5" Tag="{x:Bind Id}" Click="DeleteRule_Click" ToolTipService.ToolTip="Delete limit">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="#EF4444" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- 4. Live Throttled Traffic (WinDivert) -->
+                <Border x:Name="LiveUsageCard" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Visibility="Collapsed">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Live Throttled Traffic" FontWeight="SemiBold" FontSize="15" />
+                        <TextBlock x:Name="EmptyUsageText" Text="Waiting for active traffic on throttled applications..." FontSize="12" Opacity="0.65" />
+
+                        <ItemsControl x:Name="UsageList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:BandwidthAppUsageDto">
+                                    <Border Margin="0,0,0,6" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="12,8">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind ApplicationName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" FontSize="12" VerticalAlignment="Center">
+                                                <Run Text="↓ " /><Run Text="{x:Bind DownloadSpeedDisplay}" FontWeight="SemiBold" />
+                                            </TextBlock>
+                                            <TextBlock Grid.Column="2" FontSize="12" VerticalAlignment="Center">
+                                                <Run Text="↑ " /><Run Text="{x:Bind UploadSpeedDisplay}" FontWeight="SemiBold" />
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

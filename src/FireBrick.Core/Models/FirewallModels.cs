@@ -569,3 +569,106 @@ public sealed class HostsFileDocumentDto
     public bool HasBackup { get; set; }
     public DateTimeOffset? LastModifiedUtc { get; set; }
 }
+
+public enum BandwidthLimiterMode
+{
+    /// <summary>Bandwidth limiting is completely disabled (100% driverless, zero overhead).</summary>
+    Disabled = 0,
+
+    /// <summary>Built-in Windows QoS Packet Scheduler (driverless, outbound/upload throttling only).</summary>
+    WindowsQos = 1,
+
+    /// <summary>Optional WinDivert packet pacer add-on (supports both download and upload throttling).</summary>
+    WinDivert = 2
+}
+
+public sealed class BandwidthRuleDto
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string ApplicationPath { get; set; } = string.Empty;
+    public string ApplicationName { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Maximum download speed in KB/s (1 KB/s = 1024 bytes/s). 0 means unlimited.</summary>
+    public int DownloadLimitKBps { get; set; }
+
+    /// <summary>Maximum upload speed in KB/s (1 KB/s = 1024 bytes/s). 0 means unlimited.</summary>
+    public int UploadLimitKBps { get; set; }
+
+    public int? TemporaryMinutes { get; set; }
+    public DateTimeOffset? ExpiresAtUtc { get; set; }
+    public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    [JsonIgnore]
+    public string DisplayAppName => string.IsNullOrWhiteSpace(ApplicationName)
+        ? (string.IsNullOrWhiteSpace(ApplicationPath) ? "Unknown App" : Path.GetFileName(ApplicationPath))
+        : ApplicationName;
+
+    [JsonIgnore]
+    public string DownloadLimitDisplay => FormatRateKBps(DownloadLimitKBps);
+
+    [JsonIgnore]
+    public string UploadLimitDisplay => FormatRateKBps(UploadLimitKBps);
+
+    [JsonIgnore]
+    public string DurationDisplay => ExpiresAtUtc.HasValue
+        ? $"Temp ({Math.Max(1, (int)Math.Ceiling((ExpiresAtUtc.Value - DateTimeOffset.UtcNow).TotalMinutes))}m left)"
+        : "Permanent";
+
+    public static string FormatRateKBps(int kbps)
+    {
+        if (kbps <= 0) return "Unlimited";
+        if (kbps >= 1024)
+        {
+            double mbps = kbps / 1024.0;
+            return $"{mbps:0.##} MB/s";
+        }
+        return $"{kbps} KB/s";
+    }
+}
+
+public sealed class BandwidthAppUsageDto
+{
+    public string ApplicationPath { get; set; } = string.Empty;
+    public string ApplicationName { get; set; } = string.Empty;
+    public long CurrentDownloadBps { get; set; }
+    public long CurrentUploadBps { get; set; }
+    public long TotalDownloadedBytes { get; set; }
+    public long TotalUploadedBytes { get; set; }
+    public bool IsThrottled { get; set; }
+
+    [JsonIgnore]
+    public string DownloadSpeedDisplay => FormatBps(CurrentDownloadBps);
+
+    [JsonIgnore]
+    public string UploadSpeedDisplay => FormatBps(CurrentUploadBps);
+
+    public static string FormatBps(long bps)
+    {
+        if (bps <= 0) return "0 B/s";
+        if (bps < 1024) return $"{bps} B/s";
+        if (bps < 1024 * 1024) return $"{bps / 1024.0:0.#} KB/s";
+        return $"{bps / (1024.0 * 1024.0):0.##} MB/s";
+    }
+}
+
+public sealed class BandwidthLimiterStatusDto
+{
+    public BandwidthLimiterMode Mode { get; set; } = BandwidthLimiterMode.Disabled;
+    public bool AutoUnloadWinDivertWhenIdle { get; set; } = true;
+    public bool IsActive { get; set; }
+    public bool IsWinDivertInstalled { get; set; }
+    public bool IsWinDivertDriverLoaded { get; set; }
+    public bool IsElevatedOrService { get; set; }
+    public int ActiveRuleCount { get; set; }
+    public string WinDivertInstallPath { get; set; } = string.Empty;
+    public string StatusMessage { get; set; } = "Disabled";
+    public string? LastError { get; set; }
+}
+
+public sealed class BandwidthLimiterConfigDto
+{
+    public BandwidthLimiterMode Mode { get; set; } = BandwidthLimiterMode.Disabled;
+    public bool AutoUnloadWinDivertWhenIdle { get; set; } = true;
+    public List<BandwidthRuleDto> Rules { get; set; } = new();
+}
