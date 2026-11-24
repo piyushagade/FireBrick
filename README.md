@@ -7,6 +7,7 @@
 **A modern WinUI 3 frontend for Windows Defender Firewall & Windows Filtering Platform (WFP).**
 
 [![Latest Release](https://img.shields.io/github/v/release/piyushagade/FireBrick?style=flat-square&logo=github)](https://github.com/piyushagade/FireBrick/releases/latest)
+[![VirusTotal](https://img.shields.io/badge/VirusTotal-Scanned-10b981?style=flat-square&logo=virustotal&logoColor=white)](https://github.com/piyushagade/FireBrick/releases/latest)
 [![Platform](https://img.shields.io/badge/Windows-10%20%7C%2011%20(x64)-0078D6?style=flat-square&logo=windows)](https://github.com/piyushagade/FireBrick/releases/latest)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0%20%7C%20WinUI%203-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange?style=flat-square)](LICENSE)
